@@ -72,8 +72,16 @@ def register_all_crawlers() -> None:
 
     if "youtube" in enabled:
         try:
-            from app.crawlers.youtube.crawler import YouTubeCrawler
-            CrawlerFactory.register("youtube", YouTubeCrawler)
+            from app.core.config import get_settings
+            settings = get_settings()
+            
+            if settings.youtube_api_key:
+                from app.crawlers.youtube.crawler import YouTubeCrawler
+                CrawlerFactory.register("youtube", YouTubeCrawler)
+            else:
+                from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+                CrawlerFactory.register("youtube", YtdlpYouTubeCrawler)
+                logger.info("YouTube API Key not found. Using yt-dlp crawler fallback.")
         except ImportError as e:
             logger.warning(f"YouTube crawler unavailable: {e}")
 

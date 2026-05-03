@@ -65,6 +65,44 @@ class YtdlpClient:
         except json.JSONDecodeError as e:
             raise MediaDownloadError(url, f"Failed to parse yt-dlp output: {e}")
 
+    async def extract_multiple_info(self, url_or_query: str, limit: int = None) -> list[dict[str, Any]]:
+        """
+        Extract metadata for multiple items (search or playlist).
+        """
+        cmd = [
+            "yt-dlp",
+            "--dump-json",
+            "--no-download",
+            "--ignore-errors",
+            url_or_query,
+        ]
+        if limit:
+            cmd.extend(["--playlist-end", str(limit)])
+            
+        if self.proxy:
+            cmd.extend(["--proxy", self.proxy])
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                limit=1024 * 1024 * 10,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+
+            results = []
+            for line in stdout.decode("utf-8").strip().split("\n"):
+                if line.strip():
+                    try:
+                        results.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            return results
+
+        except asyncio.TimeoutError:
+            raise MediaDownloadError(url_or_query, "yt-dlp extraction timed out")
+
     async def download_video(
         self,
         url: str,
