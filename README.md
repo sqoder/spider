@@ -58,7 +58,7 @@ A robust, multi-platform media crawler that unifies data from YouTube, Reddit, T
    uvicorn app.main:app --reload
 
    # Start the Celery Worker
-   celery -A app.core.task_queue.celery_app worker --loglevel=info
+   celery -A app.core.task_queue:celery_app worker --loglevel=info -Q crawl,media
    ```
 
 ## 🛠 Platform Specific Configurations

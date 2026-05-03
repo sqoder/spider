@@ -28,8 +28,9 @@ async def lifespan(app: FastAPI):
     # Initialize database (create tables if not using Alembic)
     from app.db.session import init_db
 
-    await init_db()
-    logger.info("✅ Database initialized")
+    if settings.app_env == "development":
+        await init_db()
+        logger.info("✅ Database initialized")
 
     # Initialize Redis (best-effort, app works without it)
     try:

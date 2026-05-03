@@ -9,3 +9,4 @@ media/
 .idea/
 .vscode/
 *.log
+.DS_Store
