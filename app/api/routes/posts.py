@@ -50,7 +50,9 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{post_id}", response_model=PostOut)
-async def update_post(post_id: int, data: PostUpdate, db: AsyncSession = Depends(get_db)):
+async def update_post(
+    post_id: int, data: PostUpdate, db: AsyncSession = Depends(get_db)
+):
     """Partially update a post."""
     repo = PostRepository(db)
     post = await repo.update(post_id, data)

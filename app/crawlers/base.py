@@ -69,7 +69,9 @@ class CrawlResult:
                 "view_count": self.view_count,
             },
             "media": self.media,
-            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "published_at": (
+                self.published_at.isoformat() if self.published_at else None
+            ),
             "raw": self.raw,
         }
 

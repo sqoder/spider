@@ -143,8 +143,14 @@ class InstagramCrawler(BaseCrawler):
             author_name=owner.get("full_name", ""),
             author_username=username,
             author_url=f"https://www.instagram.com/{username}/" if username else None,
-            like_count=data.get("edge_media_preview_like", {}).get("count", data.get("like_count", 0)) or 0,
-            comment_count=data.get("edge_media_to_comment", {}).get("count", data.get("comment_count", 0)) or 0,
+            like_count=data.get("edge_media_preview_like", {}).get(
+                "count", data.get("like_count", 0)
+            )
+            or 0,
+            comment_count=data.get("edge_media_to_comment", {}).get(
+                "count", data.get("comment_count", 0)
+            )
+            or 0,
             view_count=data.get("video_view_count", 0) or 0,
             media=media,
             thumbnail_url=data.get("thumbnail_src", data.get("display_url")),

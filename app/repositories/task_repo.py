@@ -4,7 +4,7 @@ CrawlTask repository — CRUD operations for the crawl_tasks table.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task import CrawlTask
@@ -69,7 +69,9 @@ class TaskRepository:
         await self.db.refresh(task)
         return task
 
-    async def mark_failed(self, task_id: int, error_message: str, failed_count: int = 0) -> CrawlTask | None:
+    async def mark_failed(
+        self, task_id: int, error_message: str, failed_count: int = 0
+    ) -> CrawlTask | None:
         task = await self.db.get(CrawlTask, task_id)
         if not task:
             return None
@@ -81,7 +83,13 @@ class TaskRepository:
         await self.db.refresh(task)
         return task
 
-    async def mark_partial(self, task_id: int, success_count: int, failed_count: int, error_message: str | None = None) -> CrawlTask | None:
+    async def mark_partial(
+        self,
+        task_id: int,
+        success_count: int,
+        failed_count: int,
+        error_message: str | None = None,
+    ) -> CrawlTask | None:
         task = await self.db.get(CrawlTask, task_id)
         if not task:
             return None

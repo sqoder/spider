@@ -58,9 +58,7 @@ class RedisStorage:
             logger.warning(f"Redis cache get error: {e}")
             return None
 
-    async def cache_set(
-        self, key: str, value: str, ttl: Optional[int] = None
-    ) -> bool:
+    async def cache_set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
         """Set a cached value with optional TTL."""
         if not self._client:
             return False
@@ -88,6 +86,7 @@ class RedisStorage:
     async def cache_json_get(self, key: str) -> Optional[dict]:
         """Get a JSON-cached value."""
         import json
+
         value = await self.cache_get(key)
         if value:
             try:
@@ -101,6 +100,7 @@ class RedisStorage:
     ) -> bool:
         """Cache a value as JSON."""
         import json
+
         return await self.cache_set(key, json.dumps(data, default=str), ttl=ttl)
 
     # ---- Quota Tracking ----
@@ -132,14 +132,13 @@ class RedisStorage:
 
     # ---- Task Status ----
 
-    async def set_task_progress(
-        self, task_id: int, progress: dict
-    ) -> None:
+    async def set_task_progress(self, task_id: int, progress: dict) -> None:
         """Store real-time task progress."""
         if not self._client:
             return
         try:
             import json
+
             await self._client.setex(
                 f"task_progress:{task_id}",
                 3600,  # 1 hour TTL

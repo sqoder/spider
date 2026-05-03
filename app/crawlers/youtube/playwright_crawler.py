@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from loguru import logger
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import Page, async_playwright
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 
@@ -38,21 +38,21 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         logger.info(f"[Playwright] Searching YouTube: {keyword}")
         await self._init_browser()
         page = await self._browser.new_page()
-        
+
         results = []
         try:
             url = f"https://www.youtube.com/results?search_query={keyword}"
             await page.goto(url, wait_until="domcontentloaded")
-            
+
             # YouTube stores the initial data in a global window variable `ytInitialData`
             # We can evaluate javascript to extract it directly!
             yt_data = await page.evaluate("() => { return window.ytInitialData; }")
-            
+
             if not yt_data:
                 logger.warning("ytInitialData not found. Retrying with delay...")
                 await asyncio.sleep(2)
                 yt_data = await page.evaluate("() => { return window.ytInitialData; }")
-                
+
             if not yt_data:
                 raise Exception("Failed to extract ytInitialData from page")
 
@@ -61,26 +61,37 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             two_column = contents.get("twoColumnSearchResultsRenderer", {})
             primary_contents = two_column.get("primaryContents", {})
             section_list = primary_contents.get("sectionListRenderer", {})
-            
+
             for content in section_list.get("contents", []):
                 item_section = content.get("itemSectionRenderer", {})
                 for item in item_section.get("contents", []):
                     if "videoRenderer" in item:
                         video = item["videoRenderer"]
-                        
+
                         video_id = video.get("videoId")
-                        title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
-                        
+                        title = (
+                            video.get("title", {}).get("runs", [{}])[0].get("text", "")
+                        )
+
                         # Author info
                         owner = video.get("ownerText", {}).get("runs", [{}])[0]
                         author_name = owner.get("text", "")
-                        author_url = owner.get("navigationEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
-                        author_username = author_url.split("/")[-1] if author_url else ""
-                        
+                        author_url = (
+                            owner.get("navigationEndpoint", {})
+                            .get("commandMetadata", {})
+                            .get("webCommandMetadata", {})
+                            .get("url", "")
+                        )
+                        author_username = (
+                            author_url.split("/")[-1] if author_url else ""
+                        )
+
                         # Stats
-                        view_text = video.get("viewCountText", {}).get("simpleText", "0")
+                        view_text = video.get("viewCountText", {}).get(
+                            "simpleText", "0"
+                        )
                         view_count = self._parse_count(view_text)
-                        
+
                         result = CrawlResult(
                             platform="youtube",
                             source_id=video_id,
@@ -91,10 +102,10 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                             author_name=author_name,
                             author_username=author_username,
                             view_count=view_count,
-                            raw=video
+                            raw=video,
                         )
                         results.append(result)
-                        
+
                         if len(results) >= limit:
                             return results
 

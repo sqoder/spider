@@ -51,9 +51,7 @@ class YtdlpClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=60
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
 
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8", errors="replace").strip()
@@ -91,20 +89,26 @@ class YtdlpClient:
 
         cmd = [
             "yt-dlp",
-            "-o", output_template,
+            "-o",
+            output_template,
             "--no-playlist",
             "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
+            "--convert-thumbnails",
+            "jpg",
         ]
 
         if format_id:
             cmd.extend(["-f", format_id])
         else:
             # Best video up to max_quality + best audio, merged
-            cmd.extend([
-                "-f", f"bestvideo[height<={max_quality}]+bestaudio/best[height<={max_quality}]",
-                "--merge-output-format", "mp4",
-            ])
+            cmd.extend(
+                [
+                    "-f",
+                    f"bestvideo[height<={max_quality}]+bestaudio/best[height<={max_quality}]",
+                    "--merge-output-format",
+                    "mp4",
+                ]
+            )
 
         if self.proxy:
             cmd.extend(["--proxy", self.proxy])
@@ -133,7 +137,11 @@ class YtdlpClient:
             # Try to find the output file
             for line in output_lines:
                 if "Destination:" in line or "has already been downloaded" in line:
-                    filepath = line.split("Destination: ")[-1].strip() if "Destination:" in line else ""
+                    filepath = (
+                        line.split("Destination: ")[-1].strip()
+                        if "Destination:" in line
+                        else ""
+                    )
                     if filepath:
                         return Path(filepath)
 
@@ -163,11 +171,14 @@ class YtdlpClient:
 
         cmd = [
             "yt-dlp",
-            "-o", output_template,
+            "-o",
+            output_template,
             "--no-playlist",
             "-x",  # Extract audio
-            "--audio-format", "mp3",
-            "--audio-quality", "192K",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "192K",
             url,
         ]
 
@@ -180,9 +191,7 @@ class YtdlpClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=300
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8", errors="replace").strip()

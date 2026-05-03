@@ -25,7 +25,7 @@ async def crawl_search(
     Creates a Task record and dispatches it to Celery.
     """
     repo = TaskRepository(db)
-    
+
     # Create the task
     task_data = TaskCreate(
         platform=platform,
@@ -34,12 +34,12 @@ async def crawl_search(
         limit_count=limit,
     )
     task = await repo.create(task_data)
-    
+
     # Dispatch to Celery
     celery_task = execute_crawl_task.delay(task.id)
-    
+
     # Update celery_task_id
     await repo.set_celery_id(task.id, celery_task.id)
     await db.refresh(task)
-    
+
     return task

@@ -48,7 +48,9 @@ class MediaStorage:
         filename = f"{source_id}.{extension.lstrip('.')}"
         return platform_dir / filename
 
-    def file_exists(self, platform: str, source_id: str, extension: str = "mp4") -> bool:
+    def file_exists(
+        self, platform: str, source_id: str, extension: str = "mp4"
+    ) -> bool:
         """Check if a media file already exists."""
         path = self.get_media_path(platform, source_id, extension)
         return path.exists()
@@ -125,9 +127,11 @@ class MediaStorage:
             "total_files": total_files,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "max_size_mb": self.max_size_mb,
-            "usage_percent": round(
-                (total_size / (1024 * 1024)) / self.max_size_mb * 100, 1
-            ) if self.max_size_mb > 0 else 0,
+            "usage_percent": (
+                round((total_size / (1024 * 1024)) / self.max_size_mb * 100, 1)
+                if self.max_size_mb > 0
+                else 0
+            ),
             "by_platform": by_platform,
         }
 

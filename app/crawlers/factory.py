@@ -65,6 +65,7 @@ def register_all_crawlers() -> None:
     # YouTube
     try:
         from app.crawlers.youtube.crawler import YouTubeCrawler
+
         CrawlerFactory.register("youtube", YouTubeCrawler)
     except ImportError as e:
         logger.warning(f"YouTube crawler unavailable: {e}")
@@ -72,6 +73,7 @@ def register_all_crawlers() -> None:
     # Reddit
     try:
         from app.crawlers.reddit.crawler import RedditCrawler
+
         CrawlerFactory.register("reddit", RedditCrawler)
     except ImportError as e:
         logger.warning(f"Reddit crawler unavailable: {e}")
@@ -79,6 +81,7 @@ def register_all_crawlers() -> None:
     # TikTok
     try:
         from app.crawlers.tiktok.crawler import TikTokCrawler
+
         CrawlerFactory.register("tiktok", TikTokCrawler)
     except ImportError as e:
         logger.warning(f"TikTok crawler unavailable: {e}")
@@ -86,6 +89,7 @@ def register_all_crawlers() -> None:
     # Instagram
     try:
         from app.crawlers.instagram.crawler import InstagramCrawler
+
         CrawlerFactory.register("instagram", InstagramCrawler)
     except ImportError as e:
         logger.warning(f"Instagram crawler unavailable: {e}")
@@ -93,6 +97,7 @@ def register_all_crawlers() -> None:
     # X / Twitter
     try:
         from app.crawlers.x.crawler import XCrawler
+
         CrawlerFactory.register("x", XCrawler)
     except ImportError as e:
         logger.warning(f"X/Twitter crawler unavailable: {e}")

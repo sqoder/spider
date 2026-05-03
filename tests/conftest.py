@@ -2,12 +2,27 @@
 Pytest configuration and shared fixtures.
 """
 
+import os
 from typing import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+
+from app.db.base import Base
+from app.db.session import get_engine, get_session_factory
 from app.main import app
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def setup_db():
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest_asyncio.fixture

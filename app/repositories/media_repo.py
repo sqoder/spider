@@ -2,7 +2,7 @@
 MediaAsset repository — CRUD operations for the media_assets table.
 """
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import MediaAsset
@@ -40,7 +40,9 @@ class MediaRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[MediaAsset], int]:
-        count_query = select(func.count(MediaAsset.id)).where(MediaAsset.post_id == post_id)
+        count_query = select(func.count(MediaAsset.id)).where(
+            MediaAsset.post_id == post_id
+        )
         total = (await self.db.execute(count_query)).scalar() or 0
 
         query = (
@@ -53,7 +55,9 @@ class MediaRepository:
         result = await self.db.execute(query)
         return list(result.scalars().all()), total
 
-    async def update_local_path(self, asset_id: int, local_path: str) -> MediaAsset | None:
+    async def update_local_path(
+        self, asset_id: int, local_path: str
+    ) -> MediaAsset | None:
         asset = await self.db.get(MediaAsset, asset_id)
         if not asset:
             return None

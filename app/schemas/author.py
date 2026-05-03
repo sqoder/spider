@@ -22,11 +22,13 @@ class AuthorBase(BaseModel):
 
 class AuthorCreate(AuthorBase):
     """Used when creating / upserting an author from crawler output."""
+
     pass
 
 
 class AuthorUpdate(BaseModel):
     """Partial update — only set fields are written."""
+
     username: str | None = None
     display_name: str | None = None
     profile_url: str | None = None
@@ -39,6 +41,7 @@ class AuthorUpdate(BaseModel):
 
 class AuthorOut(AuthorBase):
     """Response model returned by API."""
+
     id: int
     created_at: datetime
     updated_at: datetime

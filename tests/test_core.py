@@ -3,23 +3,18 @@ Tests for core modules: config, rate limiter, exceptions.
 """
 
 import asyncio
+
 import pytest
 
 from app.core.config import Settings, get_settings
-from app.core.exceptions import (
-    CrawlerBaseError,
-    PlatformNotSupportedError,
-    RateLimitExceededError,
-    APIKeyMissingError,
-    QuotaExhaustedError,
-    CrawlError,
-    MediaDownloadError,
-    ContentNotFoundError,
-)
+from app.core.exceptions import (APIKeyMissingError, ContentNotFoundError,
+                                 CrawlerBaseError, CrawlError,
+                                 MediaDownloadError, PlatformNotSupportedError,
+                                 QuotaExhaustedError, RateLimitExceededError)
 from app.core.rate_limiter import RateLimiter
 
-
 # ---- Config Tests ----
+
 
 class TestConfig:
     """Test configuration loading."""
@@ -46,6 +41,7 @@ class TestConfig:
 
 
 # ---- Exception Tests ----
+
 
 class TestExceptions:
     """Test custom exception hierarchy."""
@@ -97,6 +93,7 @@ class TestExceptions:
 
 
 # ---- Rate Limiter Tests ----
+
 
 class TestRateLimiter:
     """Test the token-bucket rate limiter."""

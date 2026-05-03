@@ -11,12 +11,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.core.config import get_settings
-from app.core.exceptions import (
-    CrawlerBaseError,
-    PlatformNotSupportedError,
-    QuotaExhaustedError,
-    RateLimitExceededError,
-)
+from app.core.exceptions import (CrawlerBaseError, PlatformNotSupportedError,
+                                 QuotaExhaustedError, RateLimitExceededError)
 from app.core.logger import setup_logger
 
 
@@ -31,12 +27,14 @@ async def lifespan(app: FastAPI):
 
     # Initialize database (create tables if not using Alembic)
     from app.db.session import init_db
+
     await init_db()
     logger.info("✅ Database initialized")
 
     # Initialize Redis (best-effort, app works without it)
     try:
         from app.storage.redis import redis_storage
+
         await redis_storage.connect()
         logger.info("✅ Redis connected")
     except Exception as e:
@@ -45,6 +43,7 @@ async def lifespan(app: FastAPI):
     # Setup rate limiter
     try:
         from app.core.rate_limiter import setup_rate_limiter
+
         setup_rate_limiter()
         logger.info("✅ Rate limiter configured")
     except Exception:
@@ -53,6 +52,7 @@ async def lifespan(app: FastAPI):
     # Register all crawlers
     try:
         from app.crawlers.factory import register_all_crawlers
+
         register_all_crawlers()
         logger.info("✅ Crawlers registered")
     except Exception:
@@ -66,10 +66,12 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down GlobalMediaCrawler...")
     try:
         from app.storage.redis import redis_storage
+
         await redis_storage.close()
     except Exception:
         pass
     from app.db.session import close_db
+
     await close_db()
     logger.info("👋 Goodbye!")
 
@@ -102,10 +104,16 @@ def create_app() -> FastAPI:
     # ---- Exception Handlers ----
 
     @app.exception_handler(PlatformNotSupportedError)
-    async def platform_not_supported_handler(request: Request, exc: PlatformNotSupportedError):
+    async def platform_not_supported_handler(
+        request: Request, exc: PlatformNotSupportedError
+    ):
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": str(exc), "message": "Platform not supported"},
+            content={
+                "success": False,
+                "error": str(exc),
+                "message": "Platform not supported",
+            },
         )
 
     @app.exception_handler(RateLimitExceededError)
@@ -140,12 +148,12 @@ def create_app() -> FastAPI:
         )
 
     # ---- Register Routes (Phase 2 split routes) ----
-    from app.api.routes.health import router as health_router
-    from app.api.routes.posts import router as posts_router
     from app.api.routes.authors import router as authors_router
-    from app.api.routes.tasks import router as tasks_router
     from app.api.routes.comments import router as comments_router
     from app.api.routes.crawl import router as crawl_router
+    from app.api.routes.health import router as health_router
+    from app.api.routes.posts import router as posts_router
+    from app.api.routes.tasks import router as tasks_router
 
     app.include_router(health_router, prefix="/api")
     app.include_router(posts_router, prefix="/api")

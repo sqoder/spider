@@ -24,11 +24,13 @@ class PostBase(BaseModel):
 
 class PostCreate(PostBase):
     """Used when creating / upserting a post from crawler output."""
+
     author_id: int | None = None
 
 
 class PostUpdate(BaseModel):
     """Partial update."""
+
     title: str | None = None
     content: str | None = None
     post_type: str | None = None
@@ -41,6 +43,7 @@ class PostUpdate(BaseModel):
 
 class PostOut(PostBase):
     """Response model returned by API."""
+
     id: int
     author_id: int | None = None
     created_at: datetime
@@ -51,6 +54,7 @@ class PostOut(PostBase):
 
 class PostListOut(BaseModel):
     """Paginated list response."""
+
     items: list[PostOut]
     total: int
     page: int = 1

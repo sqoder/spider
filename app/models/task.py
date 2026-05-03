@@ -7,8 +7,7 @@ status: pending | running | success | failed | partial_success
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
-from sqlalchemy import JSON
+from sqlalchemy import JSON, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -28,7 +27,11 @@ class CrawlTask(Base):
 
     # Status tracking
     status: Mapped[str] = mapped_column(
-        String(50), default="pending", server_default="pending", index=True, nullable=False
+        String(50),
+        default="pending",
+        server_default="pending",
+        index=True,
+        nullable=False,
     )
     limit_count: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
     success_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -42,13 +45,20 @@ class CrawlTask(Base):
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Timestamps
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     def __repr__(self) -> str:

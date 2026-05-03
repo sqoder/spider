@@ -13,16 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crawlers.base import CrawlResult
 from app.crawlers.factory import CrawlerFactory
 from app.models.database import get_db
-from app.models.schemas import (
-    APIResponse,
-    CreateTaskRequest,
-    PostListResponse,
-    PostResponse,
-    SearchRequest,
-    TaskResponse,
-    UrlCrawlRequest,
-    UserCrawlRequest,
-)
+from app.models.schemas import (APIResponse, CreateTaskRequest,
+                                PostListResponse, PostResponse, SearchRequest,
+                                TaskResponse, UrlCrawlRequest,
+                                UserCrawlRequest)
 from app.models.task import TaskStatus, TaskType
 from app.storage.postgres import PostgresStorage
 from app.storage.redis import redis_storage
@@ -33,6 +27,7 @@ router = APIRouter(prefix="/api", tags=["crawler"])
 # ============================================================
 # Health Check
 # ============================================================
+
 
 @router.get("/health", response_model=APIResponse)
 async def health_check():
@@ -52,6 +47,7 @@ async def health_check():
 # ============================================================
 # Task Management
 # ============================================================
+
 
 @router.post("/tasks", response_model=APIResponse)
 async def create_task(
@@ -85,6 +81,7 @@ async def create_task(
     celery_task_id = None
     try:
         from app.workers.crawler_worker import execute_crawl_task
+
         celery_result = execute_crawl_task.delay(task.id)
         celery_task_id = celery_result.id
         task.celery_task_id = celery_task_id
@@ -148,6 +145,7 @@ async def list_tasks(
 # Content (Posts) Retrieval
 # ============================================================
 
+
 @router.get("/posts", response_model=APIResponse)
 async def list_posts(
     platform: Optional[str] = Query(None, description="Filter by platform"),
@@ -189,6 +187,7 @@ async def get_post(
 # ============================================================
 # Direct Crawl (Synchronous)
 # ============================================================
+
 
 @router.post("/crawl/search", response_model=APIResponse)
 async def crawl_search(
@@ -321,6 +320,7 @@ async def crawl_url(
 # ============================================================
 # Storage Stats
 # ============================================================
+
 
 @router.get("/stats", response_model=APIResponse)
 async def get_stats():

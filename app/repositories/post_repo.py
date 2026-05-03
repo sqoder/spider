@@ -3,7 +3,7 @@ Post repository — CRUD operations for the posts table.
 Handles upsert (platform+source_id dedup), pagination, and filtering.
 """
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.post import Post

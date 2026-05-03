@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
 
     # ---- Database ----
-    database_url: str = "postgresql+asyncpg://crawler:crawler_pass@localhost:5432/global_media_crawler"
+    database_url: str = (
+        "postgresql+asyncpg://crawler:crawler_pass@localhost:5432/global_media_crawler"
+    )
     database_echo: bool = False
 
     # ---- Redis ----

@@ -11,7 +11,8 @@ import httpx
 from loguru import logger
 
 from app.core.config import get_settings
-from app.core.exceptions import APIKeyMissingError, AuthenticationError, CrawlError, RateLimitExceededError
+from app.core.exceptions import (APIKeyMissingError, AuthenticationError,
+                                 CrawlError, RateLimitExceededError)
 
 
 class RedditAPIClient:
@@ -30,7 +31,9 @@ class RedditAPIClient:
         self.user_agent = settings.reddit_user_agent
 
         if not self.client_id or not self.client_secret:
-            raise APIKeyMissingError("reddit", "REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET")
+            raise APIKeyMissingError(
+                "reddit", "REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET"
+            )
 
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0
@@ -66,7 +69,9 @@ class RedditAPIClient:
             logger.info("Reddit OAuth token obtained successfully")
 
         except httpx.HTTPStatusError as e:
-            raise AuthenticationError("reddit", f"OAuth failed: {e.response.status_code}")
+            raise AuthenticationError(
+                "reddit", f"OAuth failed: {e.response.status_code}"
+            )
         finally:
             await auth_client.aclose()
 
@@ -91,7 +96,9 @@ class RedditAPIClient:
                 f"resets in {float(reset or 0):.0f}s"
             )
 
-    async def _request(self, method: str, endpoint: str, params: Optional[dict] = None) -> dict:
+    async def _request(
+        self, method: str, endpoint: str, params: Optional[dict] = None
+    ) -> dict:
         """Make an authenticated API request."""
         await self._ensure_auth()
 
@@ -112,7 +119,9 @@ class RedditAPIClient:
             return response.json()
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Reddit API error: {e.response.status_code} - {e.response.text}")
+            logger.error(
+                f"Reddit API error: {e.response.status_code} - {e.response.text}"
+            )
             raise CrawlError("reddit", endpoint, str(e))
 
     async def search(
@@ -202,7 +211,9 @@ class RedditAPIClient:
             "limit": min(limit, 500),
             "depth": 3,
         }
-        return await self._request("GET", f"/r/{subreddit}/comments/{post_id}", params=params)
+        return await self._request(
+            "GET", f"/r/{subreddit}/comments/{post_id}", params=params
+        )
 
     async def get_user_info(self, username: str) -> dict:
         """Get user profile information."""

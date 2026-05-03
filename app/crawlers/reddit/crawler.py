@@ -143,13 +143,19 @@ class RedditCrawler(BaseCrawler):
 
         if data.get("is_video"):
             content_type = "video"
-            video_url = data.get("media", {}).get("reddit_video", {}).get("fallback_url")
+            video_url = (
+                data.get("media", {}).get("reddit_video", {}).get("fallback_url")
+            )
             if video_url:
-                media.append({
-                    "type": "video",
-                    "url": video_url,
-                    "duration": data.get("media", {}).get("reddit_video", {}).get("duration"),
-                })
+                media.append(
+                    {
+                        "type": "video",
+                        "url": video_url,
+                        "duration": data.get("media", {})
+                        .get("reddit_video", {})
+                        .get("duration"),
+                    }
+                )
         elif data.get("post_hint") == "image":
             content_type = "image"
             if data.get("url"):
@@ -164,10 +170,12 @@ class RedditCrawler(BaseCrawler):
                 if media_id and media_id in media_metadata:
                     meta = media_metadata[media_id]
                     source = meta.get("s", {})
-                    media.append({
-                        "type": "image",
-                        "url": source.get("u", "").replace("&amp;", "&"),
-                    })
+                    media.append(
+                        {
+                            "type": "image",
+                            "url": source.get("u", "").replace("&amp;", "&"),
+                        }
+                    )
 
         permalink = data.get("permalink", "")
         url = f"https://www.reddit.com{permalink}" if permalink else None
@@ -188,8 +196,16 @@ class RedditCrawler(BaseCrawler):
             share_count=data.get("num_crossposts", 0),
             view_count=0,
             media=media,
-            thumbnail_url=data.get("thumbnail") if data.get("thumbnail", "").startswith("http") else None,
-            published_at=datetime.fromtimestamp(data.get("created_utc", 0), tz=timezone.utc) if data.get("created_utc") else None,
+            thumbnail_url=(
+                data.get("thumbnail")
+                if data.get("thumbnail", "").startswith("http")
+                else None
+            ),
+            published_at=(
+                datetime.fromtimestamp(data.get("created_utc", 0), tz=timezone.utc)
+                if data.get("created_utc")
+                else None
+            ),
             raw=data,
         )
 
@@ -218,7 +234,11 @@ class RedditCrawler(BaseCrawler):
                 like_count=data.get("ups", 0),
                 reply_count=0,
                 parent_comment_id=data.get("parent_id"),
-                published_at=datetime.fromtimestamp(data.get("created_utc", 0), tz=timezone.utc) if data.get("created_utc") else None,
+                published_at=(
+                    datetime.fromtimestamp(data.get("created_utc", 0), tz=timezone.utc)
+                    if data.get("created_utc")
+                    else None
+                ),
                 raw=data,
             )
             results.append(comment)

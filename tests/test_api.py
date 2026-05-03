@@ -38,57 +38,27 @@ class TestHealthEndpoint:
 
 
 @pytest.mark.asyncio
-class TestStatsEndpoint:
-    """Test the stats endpoint."""
-
-    async def test_stats(self, client: AsyncClient):
-        response = await client.get("/api/stats")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert "platforms" in data["data"]
-        assert "media_storage" in data["data"]
-
-
-@pytest.mark.asyncio
 class TestCrawlEndpoints:
-    """Test direct crawl endpoints (validation only, no actual crawling)."""
+    """Test direct crawl endpoints."""
 
     async def test_search_missing_keyword(self, client: AsyncClient):
-        response = await client.post("/api/crawl/search", json={
-            "platform": "youtube",
-        })
+        response = await client.post("/api/crawl/search?platform=youtube")
         # Should fail validation (keyword is required)
         assert response.status_code == 422
 
-    async def test_search_invalid_platform(self, client: AsyncClient):
-        response = await client.post("/api/crawl/search", json={
-            "platform": "invalid_platform",
-            "keyword": "test",
-        })
-        assert response.status_code == 422
-
-    async def test_user_crawl_missing_username(self, client: AsyncClient):
-        response = await client.post("/api/crawl/user", json={
-            "platform": "reddit",
-        })
-        assert response.status_code == 422
-
-    async def test_url_crawl_missing_url(self, client: AsyncClient):
-        response = await client.post("/api/crawl/url", json={
-            "platform": "youtube",
-        })
-        assert response.status_code == 422
-
     async def test_create_task_valid(self, client: AsyncClient):
-        response = await client.post("/api/tasks", json={
-            "platform": "youtube",
-            "type": "search",
-            "keyword": "AI tools",
-            "limit": 10,
-        })
-        # May fail due to no DB in test, but should not be 422 (validation error)
-        assert response.status_code != 422
+        from unittest.mock import patch
+
+        with patch("app.api.routes.crawl.execute_crawl_task.delay") as mock_delay:
+            mock_delay.return_value.id = "fake-celery-id"
+            response = await client.post(
+                "/api/crawl/search?platform=youtube&keyword=AI&limit=10"
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["platform"] == "youtube"
+            assert data["task_type"] == "search"
+            assert data["keyword"] == "AI"
 
 
 @pytest.mark.asyncio
@@ -97,9 +67,8 @@ class TestPostsEndpoints:
 
     async def test_list_posts(self, client: AsyncClient):
         response = await client.get("/api/posts")
-        # May fail due to no DB, but should not be a 422
-        assert response.status_code in (200, 500)
+        assert response.status_code == 200
 
     async def test_get_post_not_found(self, client: AsyncClient):
         response = await client.get("/api/posts/99999")
-        assert response.status_code in (404, 500)
+        assert response.status_code == 404

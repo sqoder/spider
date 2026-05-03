@@ -2,8 +2,9 @@
 Tests for YouTube crawler URL parsing and data transformation.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 from app.crawlers.youtube.crawler import YouTubeCrawler
 
@@ -12,7 +13,9 @@ class TestYouTubeURLParsing:
     """Test YouTube video ID extraction from various URL formats."""
 
     def test_standard_url(self):
-        vid = YouTubeCrawler._extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        vid = YouTubeCrawler._extract_video_id(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        )
         assert vid == "dQw4w9WgXcQ"
 
     def test_short_url(self):
@@ -20,11 +23,15 @@ class TestYouTubeURLParsing:
         assert vid == "dQw4w9WgXcQ"
 
     def test_embed_url(self):
-        vid = YouTubeCrawler._extract_video_id("https://www.youtube.com/embed/dQw4w9WgXcQ")
+        vid = YouTubeCrawler._extract_video_id(
+            "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        )
         assert vid == "dQw4w9WgXcQ"
 
     def test_shorts_url(self):
-        vid = YouTubeCrawler._extract_video_id("https://www.youtube.com/shorts/dQw4w9WgXcQ")
+        vid = YouTubeCrawler._extract_video_id(
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ"
+        )
         assert vid == "dQw4w9WgXcQ"
 
     def test_bare_id(self):

@@ -4,12 +4,12 @@ Tests for the base crawler and factory pattern.
 
 import pytest
 
+from app.core.exceptions import PlatformNotSupportedError
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.factory import CrawlerFactory
-from app.core.exceptions import PlatformNotSupportedError
-
 
 # ---- CrawlResult Tests ----
+
 
 class TestCrawlResult:
     """Test the unified CrawlResult dataclass."""
@@ -100,6 +100,7 @@ class TestCommentResult:
 
 
 # ---- CrawlerFactory Tests ----
+
 
 class TestCrawlerFactory:
     """Test the crawler factory pattern."""

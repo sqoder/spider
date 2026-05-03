@@ -50,13 +50,13 @@ def execute_crawl_task(self, task_id: int):
 async def _execute_task_async(task_id: int):
     """Async implementation of crawl task execution."""
     from app.db.session import get_session_factory
-    from app.repositories.task_repo import TaskRepository
-    from app.repositories.post_repo import PostRepository
     from app.repositories.author_repo import AuthorRepository
     from app.repositories.comment_repo import CommentRepository
-    from app.schemas.post import PostCreate
+    from app.repositories.post_repo import PostRepository
+    from app.repositories.task_repo import TaskRepository
     from app.schemas.author import AuthorCreate
     from app.schemas.comment import CommentCreate
+    from app.schemas.post import PostCreate
     from app.storage.redis import redis_storage
 
     session_factory = get_session_factory()
@@ -77,10 +77,13 @@ async def _execute_task_async(task_id: int):
 
         # Update progress in Redis
         try:
-            await redis_storage.set_task_progress(task_id, {
-                "status": "running",
-                "items_crawled": 0,
-            })
+            await redis_storage.set_task_progress(
+                task_id,
+                {
+                    "status": "running",
+                    "items_crawled": 0,
+                },
+            )
         except Exception:
             pass
 
@@ -94,7 +97,9 @@ async def _execute_task_async(task_id: int):
                 results = await crawler.search(task.keyword, limit=task.limit_count)
 
             elif task.task_type == "user_posts":
-                results = await crawler.get_user_posts(task.username, limit=task.limit_count)
+                results = await crawler.get_user_posts(
+                    task.username, limit=task.limit_count
+                )
 
             elif task.task_type in ("post_detail", "url_parse"):
                 result = await crawler.get_post_detail(task.url)
@@ -104,9 +109,11 @@ async def _execute_task_async(task_id: int):
                 # Get post_id from task params
                 post_id_str = (task.params or {}).get("post_id", "")
                 db_post_id = (task.params or {}).get("db_post_id")
-                
-                comments = await crawler.get_comments(post_id_str, limit=task.limit_count)
-                
+
+                comments = await crawler.get_comments(
+                    post_id_str, limit=task.limit_count
+                )
+
                 if db_post_id:
                     for c in comments:
                         comment_data = CommentCreate(
@@ -123,7 +130,7 @@ async def _execute_task_async(task_id: int):
                             raw_data=c.raw,
                         )
                         await comment_repo.create_or_update(comment_data)
-                        
+
                 await task_repo.mark_success(task_id, success_count=len(comments))
                 await crawler.close()
                 return
@@ -167,10 +174,13 @@ async def _execute_task_async(task_id: int):
 
             # Update Redis progress
             try:
-                await redis_storage.set_task_progress(task_id, {
-                    "status": "completed",
-                    "items_crawled": saved_posts,
-                })
+                await redis_storage.set_task_progress(
+                    task_id,
+                    {
+                        "status": "completed",
+                        "items_crawled": saved_posts,
+                    },
+                )
             except Exception:
                 pass
 
@@ -222,13 +232,17 @@ async def _download_media_async(platform: str, url: str, source_id: str):
 
     if platform in ("youtube", "tiktok"):
         from app.crawlers.youtube.ytdlp_client import YtdlpClient
+
         client = YtdlpClient()
         output = str(media_storage.get_media_path(platform, source_id))
         await client.download_video(url, output_template=output)
 
     elif platform in ("instagram",):
         from app.crawlers.tiktok.gallerydl_client import GalleryDLClient
+
         client = GalleryDLClient(platform=platform)
-        await client.download(url, output_dir=str(media_storage.get_platform_dir(platform)))
+        await client.download(
+            url, output_dir=str(media_storage.get_platform_dir(platform))
+        )
 
     logger.info(f"Media downloaded: {platform}/{source_id}")

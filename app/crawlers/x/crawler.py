@@ -26,12 +26,15 @@ class XCrawler(BaseCrawler):
         """Lazy-initialize twscrape account pool."""
         if self._twscrape_pool is None:
             try:
-                from twscrape import AccountsPool, API
+                from twscrape import API, AccountsPool
+
                 self._twscrape_pool = AccountsPool()
                 self._api = API(self._twscrape_pool)
                 logger.info("twscrape pool initialized")
             except ImportError:
-                logger.error("twscrape is not installed. Install with: pip install twscrape")
+                logger.error(
+                    "twscrape is not installed. Install with: pip install twscrape"
+                )
                 raise
 
         return self._api
@@ -132,11 +135,13 @@ class XCrawler(BaseCrawler):
                     for v in variants:
                         if hasattr(v, "url"):
                             best_url = v.url
-                    media.append({
-                        "type": "video",
-                        "url": best_url,
-                        "duration": getattr(video, "duration", None),
-                    })
+                    media.append(
+                        {
+                            "type": "video",
+                            "url": best_url,
+                            "duration": getattr(video, "duration", None),
+                        }
+                    )
 
         user = tweet.user if hasattr(tweet, "user") else None
 
@@ -151,7 +156,11 @@ class XCrawler(BaseCrawler):
             author_name=user.displayname if user else None,
             author_username=user.username if user else None,
             author_url=f"https://x.com/{user.username}" if user else None,
-            author_avatar=user.profileImageUrl if user and hasattr(user, "profileImageUrl") else None,
+            author_avatar=(
+                user.profileImageUrl
+                if user and hasattr(user, "profileImageUrl")
+                else None
+            ),
             like_count=getattr(tweet, "likeCount", 0) or 0,
             comment_count=getattr(tweet, "replyCount", 0) or 0,
             share_count=getattr(tweet, "retweetCount", 0) or 0,
@@ -165,6 +174,7 @@ class XCrawler(BaseCrawler):
     def _extract_tweet_id(url: str) -> str:
         """Extract tweet ID from URL."""
         import re
+
         match = re.search(r"/status/(\d+)", url)
         if match:
             return match.group(1)

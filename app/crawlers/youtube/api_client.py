@@ -11,7 +11,8 @@ import httpx
 from loguru import logger
 
 from app.core.config import get_settings
-from app.core.exceptions import APIKeyMissingError, CrawlError, QuotaExhaustedError
+from app.core.exceptions import (APIKeyMissingError, CrawlError,
+                                 QuotaExhaustedError)
 
 
 class YouTubeAPIClient:
@@ -74,7 +75,9 @@ class YouTubeAPIClient:
             self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"YouTube API error: {e.response.status_code} - {e.response.text}")
+            logger.error(
+                f"YouTube API error: {e.response.status_code} - {e.response.text}"
+            )
             raise CrawlError("youtube", endpoint, str(e))
         except httpx.RequestError as e:
             logger.error(f"YouTube API request failed: {e}")
@@ -131,7 +134,9 @@ class YouTubeAPIClient:
         }
         return await self._request("videos", params)
 
-    async def get_channel_info(self, channel_id: Optional[str] = None, username: Optional[str] = None) -> dict:
+    async def get_channel_info(
+        self, channel_id: Optional[str] = None, username: Optional[str] = None
+    ) -> dict:
         """
         Get channel information.
 

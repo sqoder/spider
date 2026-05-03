@@ -6,18 +6,17 @@ Configured for async PostgreSQL with SQLAlchemy models auto-detection.
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base
-
 # Import all models so Alembic can detect them
 from app.models.author import Author  # noqa: F401
-from app.models.post import Post  # noqa: F401
 from app.models.comment import Comment  # noqa: F401
 from app.models.media import MediaAsset  # noqa: F401
+from app.models.post import Post  # noqa: F401
 from app.models.task import CrawlTask  # noqa: F401
 
 # Alembic Config object

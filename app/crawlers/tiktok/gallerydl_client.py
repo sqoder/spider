@@ -47,9 +47,11 @@ class GalleryDLClient:
             List of metadata dicts for each item found
         """
         import sys
+
         cmd = [
             sys.executable,
-            "-m", "gallery_dl",
+            "-m",
+            "gallery_dl",
             "--dump-json",
             "--no-download",
             url,
@@ -66,9 +68,7 @@ class GalleryDLClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=120
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
 
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8", errors="replace").strip()
@@ -85,7 +85,9 @@ class GalleryDLClient:
                         data = json.loads(line)
                         if isinstance(data, list) and len(data) >= 3:
                             # gallery-dl format: [category, subcategory, metadata_dict]
-                            results.append(data[2] if isinstance(data[2], dict) else {"raw": data})
+                            results.append(
+                                data[2] if isinstance(data[2], dict) else {"raw": data}
+                            )
                         elif isinstance(data, dict):
                             results.append(data)
                     except json.JSONDecodeError:
@@ -115,7 +117,8 @@ class GalleryDLClient:
 
         cmd = [
             "gallery-dl",
-            "--dest", str(dest),
+            "--dest",
+            str(dest),
             "--write-metadata",
             url,
         ]
@@ -131,9 +134,7 @@ class GalleryDLClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=600
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
 
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8", errors="replace").strip()
@@ -155,7 +156,9 @@ class GalleryDLClient:
         except asyncio.TimeoutError:
             raise MediaDownloadError(url, "Download timed out (10 min limit)")
 
-    async def get_user_content(self, username: str, limit: int = 20) -> list[dict[str, Any]]:
+    async def get_user_content(
+        self, username: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
         """
         Get content metadata from a user's profile.
 
@@ -177,7 +180,8 @@ class GalleryDLClient:
             "gallery-dl",
             "--dump-json",
             "--no-download",
-            "--range", f"1-{limit}",
+            "--range",
+            f"1-{limit}",
             url,
         ]
 
@@ -192,9 +196,7 @@ class GalleryDLClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=120
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
 
             output = stdout.decode("utf-8").strip()
             results = []
@@ -204,7 +206,9 @@ class GalleryDLClient:
                     try:
                         data = json.loads(line)
                         if isinstance(data, list) and len(data) >= 3:
-                            results.append(data[2] if isinstance(data[2], dict) else {"raw": data})
+                            results.append(
+                                data[2] if isinstance(data[2], dict) else {"raw": data}
+                            )
                         elif isinstance(data, dict):
                             results.append(data)
                     except json.JSONDecodeError:

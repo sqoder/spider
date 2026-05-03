@@ -2,7 +2,7 @@
 Author repository — CRUD operations for the authors table.
 """
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.author import Author

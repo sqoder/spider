@@ -109,15 +109,20 @@ class TikTokCrawler(BaseCrawler):
         media = []
         video_url = data.get("url") or data.get("video_url")
         if video_url:
-            media.append({
-                "type": "video",
-                "url": video_url,
-                "duration": data.get("duration"),
-            })
+            media.append(
+                {
+                    "type": "video",
+                    "url": video_url,
+                    "duration": data.get("duration"),
+                }
+            )
 
         # Build post URL
         username = author_info.get("uniqueId", author_info.get("unique_id", ""))
-        post_url = data.get("webpage_url") or f"https://www.tiktok.com/@{username}/video/{video_id}"
+        post_url = (
+            data.get("webpage_url")
+            or f"https://www.tiktok.com/@{username}/video/{video_id}"
+        )
 
         published_at = None
         create_time = data.get("createTime", data.get("create_time"))
@@ -136,7 +141,9 @@ class TikTokCrawler(BaseCrawler):
             content_type="video",
             author_id=str(author_info.get("id", "")),
             author_name=author_info.get("nickname", ""),
-            author_username=author_info.get("uniqueId", author_info.get("unique_id", "")),
+            author_username=author_info.get(
+                "uniqueId", author_info.get("unique_id", "")
+            ),
             author_url=f"https://www.tiktok.com/@{username}" if username else None,
             like_count=stats.get("diggCount", stats.get("digg_count", 0)) or 0,
             comment_count=stats.get("commentCount", stats.get("comment_count", 0)) or 0,
@@ -181,11 +188,13 @@ class TikTokCrawler(BaseCrawler):
             like_count=info.get("like_count", 0) or 0,
             comment_count=info.get("comment_count", 0) or 0,
             view_count=info.get("view_count", 0) or 0,
-            media=[{
-                "type": "video",
-                "url": url,
-                "duration": info.get("duration"),
-            }],
+            media=[
+                {
+                    "type": "video",
+                    "url": url,
+                    "duration": info.get("duration"),
+                }
+            ],
             published_at=None,
             raw=info,
         )

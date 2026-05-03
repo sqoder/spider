@@ -6,8 +6,8 @@ post_type: video | image | text | link | album | short | reel | tweet | reddit_p
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy import JSON
+from sqlalchemy import (JSON, DateTime, ForeignKey, Integer, String, Text,
+                        UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -43,15 +43,23 @@ class Post(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     # Relationships
     author = relationship("Author", back_populates="posts", lazy="selectin")
-    comments = relationship("Comment", back_populates="post", lazy="selectin",
-                            cascade="all, delete-orphan")
-    media_assets = relationship("MediaAsset", back_populates="post", lazy="selectin",
-                                cascade="all, delete-orphan")
+    comments = relationship(
+        "Comment", back_populates="post", lazy="selectin", cascade="all, delete-orphan"
+    )
+    media_assets = relationship(
+        "MediaAsset",
+        back_populates="post",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         UniqueConstraint("platform", "source_id", name="uq_posts_platform_source_id"),

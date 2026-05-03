@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crawlers.base import CommentResult, CrawlResult
@@ -59,7 +59,9 @@ class PostgresStorage:
 
     # ---- Post Operations ----
 
-    async def upsert_post(self, result: CrawlResult, task_id: Optional[int] = None) -> Post:
+    async def upsert_post(
+        self, result: CrawlResult, task_id: Optional[int] = None
+    ) -> Post:
         """Create or update a post from crawl result data."""
         # Upsert author first
         author = await self.upsert_author(result)

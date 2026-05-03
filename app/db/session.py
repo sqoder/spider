@@ -5,11 +5,8 @@ Provides engine, session factory, and FastAPI dependency.
 
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 
 from app.core.config import get_settings
 
@@ -23,13 +20,16 @@ def get_engine():
     global _engine
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            echo=settings.database_echo,
-            pool_size=20,
-            max_overflow=10,
-            pool_pre_ping=True,
-        )
+        kwargs = {
+            "echo": settings.database_echo,
+            "pool_pre_ping": True,
+        }
+
+        if "sqlite" not in settings.database_url:
+            kwargs["pool_size"] = 20
+            kwargs["max_overflow"] = 10
+
+        _engine = create_async_engine(settings.database_url, **kwargs)
     return _engine
 
 
@@ -64,14 +64,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """Create all tables. Use Alembic in production instead."""
-    from app.db.base import Base
-
     # Import all models so Base.metadata knows about them
     import app.models.author  # noqa: F401
-    import app.models.post  # noqa: F401
     import app.models.comment  # noqa: F401
     import app.models.media  # noqa: F401
+    import app.models.post  # noqa: F401
     import app.models.task  # noqa: F401
+    from app.db.base import Base
 
     engine = get_engine()
     async with engine.begin() as conn:

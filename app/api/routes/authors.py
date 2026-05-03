@@ -28,7 +28,9 @@ async def list_authors(
 ):
     repo = AuthorRepository(db)
     offset = (page - 1) * page_size
-    items, total = await repo.list_authors(platform=platform, limit=page_size, offset=offset)
+    items, total = await repo.list_authors(
+        platform=platform, limit=page_size, offset=offset
+    )
     return {
         "items": [AuthorOut.model_validate(a) for a in items],
         "total": total,
@@ -47,7 +49,9 @@ async def get_author(author_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{author_id}", response_model=AuthorOut)
-async def update_author(author_id: int, data: AuthorUpdate, db: AsyncSession = Depends(get_db)):
+async def update_author(
+    author_id: int, data: AuthorUpdate, db: AsyncSession = Depends(get_db)
+):
     repo = AuthorRepository(db)
     author = await repo.update(author_id, data)
     if not author:

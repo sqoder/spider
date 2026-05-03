@@ -47,7 +47,9 @@ class YouTubeCrawler(BaseCrawler):
                 break
 
             # Get video IDs for detailed info
-            video_ids = [item["id"]["videoId"] for item in items if item["id"].get("videoId")]
+            video_ids = [
+                item["id"]["videoId"] for item in items if item["id"].get("videoId")
+            ]
             details_response = await self.api.get_video_details(video_ids)
             details_map = {
                 item["id"]: item for item in details_response.get("items", [])
@@ -101,9 +103,13 @@ class YouTubeCrawler(BaseCrawler):
             if not items:
                 break
 
-            video_ids = [item["id"]["videoId"] for item in items if item["id"].get("videoId")]
+            video_ids = [
+                item["id"]["videoId"] for item in items if item["id"].get("videoId")
+            ]
             details_response = await self.api.get_video_details(video_ids)
-            details_map = {item["id"]: item for item in details_response.get("items", [])}
+            details_map = {
+                item["id"]: item for item in details_response.get("items", [])
+            }
 
             for item in items:
                 video_id = item["id"].get("videoId")
@@ -184,7 +190,9 @@ class YouTubeCrawler(BaseCrawler):
                     source_id=item["id"],
                     content=top_comment.get("textDisplay"),
                     author_name=top_comment.get("authorDisplayName"),
-                    author_username=top_comment.get("authorChannelUrl", "").split("/")[-1],
+                    author_username=top_comment.get("authorChannelUrl", "").split("/")[
+                        -1
+                    ],
                     author_id=top_comment.get("authorChannelId", {}).get("value"),
                     like_count=top_comment.get("likeCount", 0),
                     reply_count=item["snippet"].get("totalReplyCount", 0),
@@ -227,7 +235,9 @@ class YouTubeCrawler(BaseCrawler):
                     "type": "video",
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                     "duration": content_details.get("duration"),
-                    "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
+                    "thumbnail_url": snippet.get("thumbnails", {})
+                    .get("high", {})
+                    .get("url"),
                 }
             ],
             published_at=self._parse_datetime(snippet.get("publishedAt")),
