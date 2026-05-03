@@ -22,24 +22,9 @@ async def crawl_search(
 ):
     """
     Trigger a search crawl task.
-    Creates a Task record and dispatches it to Celery.
+    Delegates to CrawlService to create a Task and dispatch to Celery.
     """
-    repo = TaskRepository(db)
-
-    # Create the task
-    task_data = TaskCreate(
-        platform=platform,
-        task_type="search",
-        keyword=keyword,
-        limit_count=limit,
-    )
-    task = await repo.create(task_data)
-
-    # Dispatch to Celery
-    celery_task = execute_crawl_task.delay(task.id)
-
-    # Update celery_task_id
-    await repo.set_celery_id(task.id, celery_task.id)
-    await db.refresh(task)
-
+    from app.services.crawl_service import CrawlService
+    service = CrawlService(db)
+    task = await service.trigger_search_crawl(platform, keyword, limit)
     return task

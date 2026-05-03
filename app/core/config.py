@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # ---- Application ----
     app_name: str = "GlobalMediaCrawler"
     app_env: str = "development"
+    cors_origins: str = "http://localhost:3000"
     debug: bool = True
     log_level: str = "DEBUG"
 
