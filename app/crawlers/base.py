@@ -1,0 +1,177 @@
+"""
+Base crawler abstract class.
+All platform-specific crawlers must inherit from BaseCrawler and implement its methods.
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Optional
+
+from loguru import logger
+
+from app.core.rate_limiter import rate_limiter
+
+
+@dataclass
+class CrawlResult:
+    """Unified result container returned by all crawler methods."""
+
+    platform: str
+    source_id: str
+    url: Optional[str] = None
+    title: Optional[str] = None
+    content: Optional[str] = None
+    content_type: Optional[str] = None  # video, image, text, reel, etc.
+
+    # Author info
+    author_id: Optional[str] = None
+    author_name: Optional[str] = None
+    author_username: Optional[str] = None
+    author_url: Optional[str] = None
+    author_avatar: Optional[str] = None
+
+    # Metrics
+    like_count: int = 0
+    comment_count: int = 0
+    share_count: int = 0
+    view_count: int = 0
+
+    # Media
+    media: list[dict] = field(default_factory=list)
+    thumbnail_url: Optional[str] = None
+
+    # Timestamps
+    published_at: Optional[datetime] = None
+
+    # Raw API response
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to the unified data format."""
+        return {
+            "platform": self.platform,
+            "source_id": self.source_id,
+            "url": self.url,
+            "title": self.title,
+            "content": self.content,
+            "content_type": self.content_type,
+            "author": {
+                "id": self.author_id,
+                "name": self.author_name,
+                "username": self.author_username,
+                "url": self.author_url,
+            },
+            "metrics": {
+                "like_count": self.like_count,
+                "comment_count": self.comment_count,
+                "share_count": self.share_count,
+                "view_count": self.view_count,
+            },
+            "media": self.media,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "raw": self.raw,
+        }
+
+
+@dataclass
+class CommentResult:
+    """Unified comment result container."""
+
+    platform: str
+    source_id: str
+    content: Optional[str] = None
+    author_name: Optional[str] = None
+    author_username: Optional[str] = None
+    author_id: Optional[str] = None
+    like_count: int = 0
+    reply_count: int = 0
+    parent_comment_id: Optional[str] = None
+    published_at: Optional[datetime] = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+class BaseCrawler(ABC):
+    """
+    Abstract base class for all platform crawlers.
+
+    Each platform must implement the four core methods:
+    - search: Search for content by keyword
+    - get_user_posts: Get posts from a specific user
+    - get_post_detail: Get detailed info for a single post
+    - get_comments: Get comments for a post
+    """
+
+    # Subclasses must set this
+    platform: str = ""
+
+    def __init__(self):
+        if not self.platform:
+            raise ValueError("Platform name must be set in subclass")
+        logger.info(f"Initializing {self.platform} crawler")
+
+    async def _rate_limit(self, cost: int = 1) -> None:
+        """Apply rate limiting before making a request."""
+        await rate_limiter.acquire(self.platform, cost=cost)
+
+    @abstractmethod
+    async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
+        """
+        Search for content on the platform.
+
+        Args:
+            keyword: Search query string
+            limit: Maximum number of results to return
+
+        Returns:
+            List of CrawlResult objects
+        """
+        ...
+
+    @abstractmethod
+    async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
+        """
+        Get posts/content from a specific user.
+
+        Args:
+            username: Platform username or handle
+            limit: Maximum number of results to return
+
+        Returns:
+            List of CrawlResult objects
+        """
+        ...
+
+    @abstractmethod
+    async def get_post_detail(self, url: str) -> CrawlResult:
+        """
+        Get detailed information for a single post/content.
+
+        Args:
+            url: URL of the content
+
+        Returns:
+            CrawlResult object
+        """
+        ...
+
+    @abstractmethod
+    async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
+        """
+        Get comments for a specific post.
+
+        Args:
+            post_id: Platform-specific post/content identifier
+            limit: Maximum number of comments to return
+
+        Returns:
+            List of CommentResult objects
+        """
+        ...
+
+    async def close(self) -> None:
+        """Cleanup resources. Override in subclasses if needed."""
+        pass
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}(platform={self.platform})>"
