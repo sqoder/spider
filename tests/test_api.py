@@ -42,22 +42,22 @@ class TestCrawlEndpoints:
     """Test direct crawl endpoints."""
 
     async def test_search_missing_keyword(self, client: AsyncClient):
-        response = await client.post("/api/crawl/search?platform=youtube")
+        response = await client.post("/api/crawl/search", json={"platform": "youtube"})
         # Should fail validation (keyword is required)
         assert response.status_code == 422
 
-    async def test_create_task_valid(self, client: AsyncClient):
+    async def test_search_valid(self, client: AsyncClient):
         from unittest.mock import patch
 
-        with patch("app.api.routes.crawl.execute_crawl_task.delay") as mock_delay:
-            mock_delay.return_value.id = "fake-celery-id"
+        with patch("app.api.routes.crawl.CrawlService.search") as mock_search:
+            mock_search.return_value = {"platform": "youtube", "keyword": "AI", "items": []}
             response = await client.post(
-                "/api/crawl/search?platform=youtube&keyword=AI&limit=10"
+                "/api/crawl/search",
+                json={"platform": "youtube", "keyword": "AI", "limit": 10}
             )
             assert response.status_code == 200
             data = response.json()
             assert data["platform"] == "youtube"
-            assert data["task_type"] == "search"
             assert data["keyword"] == "AI"
 
 

@@ -59,6 +59,9 @@ A robust, multi-platform media crawler that unifies data from YouTube, Reddit, T
 
    # Start the Celery Worker
    celery -A app.core.task_queue:celery_app worker --loglevel=info -Q crawl,media
+
+   # Start the Celery Beat scheduler
+   celery -A app.core.task_queue:celery_app beat --loglevel=info
    ```
 
 ## 🛠 Platform Specific Configurations

@@ -61,45 +61,48 @@ class CrawlerFactory:
 
 
 def register_all_crawlers() -> None:
-    """Register all available platform crawlers."""
-    # YouTube
-    try:
-        from app.crawlers.youtube.crawler import YouTubeCrawler
+    """Register all available platform crawlers based on enabled_platforms config."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    enabled = {
+        item.strip().lower()
+        for item in settings.enabled_platforms.split(",")
+        if item.strip()
+    }
 
-        CrawlerFactory.register("youtube", YouTubeCrawler)
-    except ImportError as e:
-        logger.warning(f"YouTube crawler unavailable: {e}")
+    if "youtube" in enabled:
+        try:
+            from app.crawlers.youtube.crawler import YouTubeCrawler
+            CrawlerFactory.register("youtube", YouTubeCrawler)
+        except ImportError as e:
+            logger.warning(f"YouTube crawler unavailable: {e}")
 
-    # Reddit
-    try:
-        from app.crawlers.reddit.crawler import RedditCrawler
+    if "reddit" in enabled:
+        try:
+            from app.crawlers.reddit.crawler import RedditCrawler
+            CrawlerFactory.register("reddit", RedditCrawler)
+        except ImportError as e:
+            logger.warning(f"Reddit crawler unavailable: {e}")
 
-        CrawlerFactory.register("reddit", RedditCrawler)
-    except ImportError as e:
-        logger.warning(f"Reddit crawler unavailable: {e}")
+    if "tiktok" in enabled:
+        try:
+            from app.crawlers.tiktok.crawler import TikTokCrawler
+            CrawlerFactory.register("tiktok", TikTokCrawler)
+        except ImportError as e:
+            logger.warning(f"TikTok crawler unavailable: {e}")
 
-    # TikTok
-    try:
-        from app.crawlers.tiktok.crawler import TikTokCrawler
+    if "instagram" in enabled:
+        try:
+            from app.crawlers.instagram.crawler import InstagramCrawler
+            CrawlerFactory.register("instagram", InstagramCrawler)
+        except ImportError as e:
+            logger.warning(f"Instagram crawler unavailable: {e}")
 
-        CrawlerFactory.register("tiktok", TikTokCrawler)
-    except ImportError as e:
-        logger.warning(f"TikTok crawler unavailable: {e}")
-
-    # Instagram
-    try:
-        from app.crawlers.instagram.crawler import InstagramCrawler
-
-        CrawlerFactory.register("instagram", InstagramCrawler)
-    except ImportError as e:
-        logger.warning(f"Instagram crawler unavailable: {e}")
-
-    # X / Twitter
-    try:
-        from app.crawlers.x.crawler import XCrawler
-
-        CrawlerFactory.register("x", XCrawler)
-    except ImportError as e:
-        logger.warning(f"X/Twitter crawler unavailable: {e}")
+    if "x" in enabled or "twitter" in enabled:
+        try:
+            from app.crawlers.x.crawler import XCrawler
+            CrawlerFactory.register("x", XCrawler)
+        except ImportError as e:
+            logger.warning(f"X/Twitter crawler unavailable: {e}")
 
     logger.info(f"Registered crawlers: {CrawlerFactory.get_supported_platforms()}")
