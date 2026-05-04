@@ -18,6 +18,7 @@ class AuthorBase(BaseModel):
     follower_count: int | None = None
     following_count: int | None = None
     raw_data: dict | None = None
+    visible_data: dict | None = None
 
 
 class AuthorCreate(AuthorBase):
@@ -37,6 +38,7 @@ class AuthorUpdate(BaseModel):
     follower_count: int | None = None
     following_count: int | None = None
     raw_data: dict | None = None
+    visible_data: dict | None = None
 
 
 class AuthorOut(AuthorBase):

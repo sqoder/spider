@@ -19,6 +19,7 @@ class MediaBase(BaseModel):
     height: int | None = None
     file_size: int | None = None
     raw_data: dict | None = None
+    visible_data: dict | None = None
 
 
 class MediaCreate(MediaBase):

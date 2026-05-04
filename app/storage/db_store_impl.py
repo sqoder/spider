@@ -41,13 +41,22 @@ class DbStoreImplement(BaseStore):
                 author_id = None
                 author_data_raw = item.get("author")
                 if isinstance(author_data_raw, dict):
+                    author_source_id = (
+                        author_data_raw.get("id")
+                        or author_data_raw.get("source_id")
+                    )
+                    if not author_source_id:
+                        author_data_raw = None
+                if isinstance(author_data_raw, dict):
+                    visible = item.get("visible_data") or {}
                     author_schema = AuthorCreate(
                         platform=self.platform,
-                        source_id=author_data_raw.get("id") or author_data_raw.get("source_id"),
+                        source_id=author_source_id,
                         username=author_data_raw.get("username"),
                         display_name=author_data_raw.get("name"),
                         profile_url=author_data_raw.get("url"),
                         avatar_url=author_data_raw.get("avatar"),
+                        visible_data=self._author_visible_data(visible),
                     )
                     author = await author_repo.create_or_update(author_schema)
                     author_id = author.id
@@ -67,6 +76,9 @@ class DbStoreImplement(BaseStore):
                     share_count=item.get("metrics", {}).get("share_count", 0),
                     view_count=item.get("metrics", {}).get("view_count", 0),
                     raw_data=item,
+                    visible_data=item.get("visible_data"),
+                    raw_sources=item.get("raw_sources"),
+                    capture_meta=item.get("capture_meta"),
                 )
                 await post_repo.create_or_update(post_schema)
             except Exception as e:
@@ -99,6 +111,9 @@ class DbStoreImplement(BaseStore):
                     parent_comment_id=item.get("parent_id") or item.get("parent_comment_id"),
                     published_at=item.get("published_at") or item.get("timestamp"),
                     raw_data=item,
+                    visible_data=item.get("visible_data"),
+                    raw_sources=item.get("raw_sources"),
+                    capture_meta=item.get("capture_meta"),
                 )
                 await comment_repo.create_or_update(comment_schema)
             except Exception as e:
@@ -112,14 +127,18 @@ class DbStoreImplement(BaseStore):
 
         for item in items:
             try:
+                source_id = item.get("id") or item.get("source_id") or item.get("user_id")
+                if not source_id:
+                    continue
                 author_schema = AuthorCreate(
                     platform=self.platform,
-                    source_id=item.get("id") or item.get("source_id") or item.get("user_id"),
+                    source_id=source_id,
                     username=item.get("username"),
                     display_name=item.get("name") or item.get("nickname"),
                     profile_url=item.get("url"),
                     avatar_url=item.get("avatar"),
-                    description=item.get("description") or item.get("desc"),
+                    bio=item.get("description") or item.get("desc"),
+                    visible_data=item.get("visible_data"),
                 )
                 await author_repo.create_or_update(author_schema)
             except Exception as e:
@@ -131,3 +150,20 @@ class DbStoreImplement(BaseStore):
         if self._session:
             await self._session.close()
             self._session = None
+
+    @staticmethod
+    def _author_visible_data(visible: dict) -> dict | None:
+        if not visible:
+            return None
+
+        keys = {
+            "channel_name",
+            "channel_handle",
+            "channel_url",
+            "channel_avatar",
+            "channel_verified",
+            "subscriber_count_text",
+            "subscriber_count",
+        }
+        data = {key: visible.get(key) for key in keys if visible.get(key) is not None}
+        return data or None

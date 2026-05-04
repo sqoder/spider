@@ -20,6 +20,9 @@ class PostBase(BaseModel):
     share_count: int = 0
     view_count: int = 0
     raw_data: dict | None = None
+    visible_data: dict | None = None
+    raw_sources: dict | None = None
+    capture_meta: dict | None = None
 
 
 class PostCreate(PostBase):
@@ -39,6 +42,9 @@ class PostUpdate(BaseModel):
     share_count: int | None = None
     view_count: int | None = None
     raw_data: dict | None = None
+    visible_data: dict | None = None
+    raw_sources: dict | None = None
+    capture_meta: dict | None = None
 
 
 class PostOut(PostBase):

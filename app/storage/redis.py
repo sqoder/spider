@@ -18,8 +18,11 @@ class RedisStorage:
         self._client: Optional[redis.Redis] = None
 
     async def connect(self) -> None:
-        """Initialize Redis connection."""
+        """Initialize Redis connection. No-op if URL is empty."""
         settings = get_settings()
+        if not settings.redis_url:
+            logger.info("Redis URL not configured — running without Redis cache")
+            return
         self._client = redis.from_url(
             settings.redis_url,
             decode_responses=True,

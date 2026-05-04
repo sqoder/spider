@@ -1,5 +1,6 @@
 """
 Celery worker tasks for async crawl job execution.
+In simple_mode, Celery is disabled and tasks are not registered.
 """
 
 import asyncio
@@ -10,9 +11,6 @@ from loguru import logger
 from app.core.task_queue import celery_app
 from app.crawlers.factory import CrawlerFactory, register_all_crawlers
 
-# Register crawlers when worker starts
-register_all_crawlers()
-
 
 def _run_async(coro):
     """Helper to run async code in Celery worker."""
@@ -21,10 +19,8 @@ def _run_async(coro):
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
+
     if loop.is_running():
-        # This shouldn't happen in a standard Celery worker, 
-        # but if it does, we need to run it in a thread or use nest_asyncio
         import nest_asyncio
         nest_asyncio.apply()
         return loop.run_until_complete(coro)
@@ -32,32 +28,59 @@ def _run_async(coro):
         try:
             return loop.run_until_complete(coro)
         finally:
-            # Don't close the loop, reuse it for the next task in this process
             pass
 
 
-@celery_app.task(
-    bind=True,
-    name="app.workers.crawler_worker.execute_crawl_task",
-    max_retries=3,
-    default_retry_delay=60,
-    acks_late=True,
-)
-def execute_crawl_task(self, task_id: int):
-    """
-    Execute a crawl task by ID.
-    Reads task params from DB, runs the crawler, and saves results.
-    """
-    logger.info(f"Executing crawl task: {task_id}")
+# ---- Guard: only register Celery tasks when Celery is active ----
+if celery_app is not None:
+    # Register crawlers when worker starts
+    register_all_crawlers()
 
-    try:
-        _run_async(_execute_task_async(task_id))
-    except Exception as e:
-        logger.error(f"Crawl task {task_id} failed: {e}")
-        # Update task status to failed
-        _run_async(_update_task_failed(task_id, str(e)))
-        # Retry if attempts remaining
-        raise self.retry(exc=e)
+    @celery_app.task(
+        bind=True,
+        name="app.workers.crawler_worker.execute_crawl_task",
+        max_retries=3,
+        default_retry_delay=60,
+        acks_late=True,
+    )
+    def execute_crawl_task(self, task_id: int):
+        """
+        Execute a crawl task by ID.
+        Reads task params from DB, runs the crawler, and saves results.
+        """
+        logger.info(f"Executing crawl task: {task_id}")
+
+        try:
+            _run_async(_execute_task_async(task_id))
+        except Exception as e:
+            logger.error(f"Crawl task {task_id} failed: {e}")
+            _run_async(_update_task_failed(task_id, str(e)))
+            raise self.retry(exc=e)
+
+    @celery_app.task(
+        name="app.workers.crawler_worker.download_media",
+        max_retries=2,
+        default_retry_delay=120,
+    )
+    def download_media(platform: str, url: str, source_id: str):
+        """Download media for a specific post."""
+        logger.info(f"Downloading media: {platform}/{source_id}")
+
+        try:
+            _run_async(_download_media_async(platform, url, source_id))
+        except Exception as e:
+            logger.error(f"Media download failed for {source_id}: {e}")
+else:
+    # Celery disabled: provide no-op stubs so imports don't break
+    logger.info("Celery disabled — background crawl tasks not available")
+
+    def execute_crawl_task(task_id: int):
+        logger.warning(f"Cannot execute task {task_id}: Celery is disabled")
+        return None
+
+    def download_media(platform: str, url: str, source_id: str):
+        logger.warning(f"Cannot download media {platform}/{source_id}: Celery is disabled")
+        return None
 
 
 async def _execute_task_async(task_id: int):
@@ -79,33 +102,25 @@ async def _execute_task_async(task_id: int):
         author_repo = AuthorRepository(session)
         comment_repo = CommentRepository(session)
 
-        # Load task
         task = await task_repo.get_by_id(task_id)
         if not task:
             logger.error(f"Task {task_id} not found")
             return
 
-        # Update status to running
         await task_repo.mark_running(task_id)
 
-        # Update progress in Redis
         try:
             await redis_storage.set_task_progress(
-                task_id,
-                {
-                    "status": "running",
-                    "items_crawled": 0,
-                },
+                task_id, {"status": "running", "items_crawled": 0}
             )
         except Exception:
             pass
 
         try:
-            # Create crawler
             crawler = CrawlerFactory.create(task.platform)
             results = []
+            comments_by_post: dict[str, list] = {}
 
-            # Execute based on task type
             if task.task_type == "search":
                 results = await crawler.search(task.keyword, limit=task.limit_count)
 
@@ -117,9 +132,19 @@ async def _execute_task_async(task_id: int):
             elif task.task_type in ("post_detail", "url_parse"):
                 result = await crawler.get_post_detail(task.url)
                 results = [result]
+                comments_limit = (task.params or {}).get(
+                    "comments_limit", task.limit_count
+                )
+                try:
+                    comments_by_post[result.source_id] = await crawler.get_comments(
+                        result.source_id, limit=comments_limit
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"Failed to fetch comments for {result.source_id}: {exc}"
+                    )
 
             elif task.task_type == "comments":
-                # Get post_id from task params
                 post_id_str = (task.params or {}).get("post_id", "")
                 db_post_id = (task.params or {}).get("db_post_id")
 
@@ -141,6 +166,9 @@ async def _execute_task_async(task_id: int):
                             parent_comment_id=c.parent_comment_id,
                             published_at=c.published_at,
                             raw_data=c.raw,
+                            visible_data=c.visible_data,
+                            raw_sources=c.raw_sources,
+                            capture_meta=c.capture_meta,
                         )
                         await comment_repo.create_or_update(comment_data)
 
@@ -148,31 +176,31 @@ async def _execute_task_async(task_id: int):
                 await crawler.close()
                 return
 
-            # Unified storage via factory
             from app.storage.factory import StoreFactory
             store = StoreFactory.create_store(task.platform, task.task_type)
-            
+
             try:
-                # 1. Store main contents
                 if task.task_type != "comments":
                     results_dicts = [r.to_dict() for r in results]
                     await store.store_content(results_dicts)
-                    
-                    # Store authors
+
                     authors = [r.to_dict().get("author") for r in results if r.to_dict().get("author")]
                     if authors:
                         await store.store_creator(authors)
-                
-                # 2. Store comments (either from post detail or explicit comment task)
+
                 if task.task_type == "comments":
                     post_id_str = (task.params or {}).get("post_id", "")
                     await store.store_comment(post_id_str, [c.to_dict() for c in results])
                 else:
                     for r in results:
-                        if r.raw.get("comments"):
+                        if comments_by_post.get(r.source_id):
+                            await store.store_comment(
+                                r.source_id,
+                                [comment.to_dict() for comment in comments_by_post[r.source_id]],
+                            )
+                        elif r.raw.get("comments"):
                             await store.store_comment(r.source_id, r.raw["comments"])
 
-                # 3. Handle media downloads and completion tracking
                 saved_count = len(results)
                 for r in results:
                     if task.task_type in ("post_detail", "url_parse"):
@@ -184,17 +212,11 @@ async def _execute_task_async(task_id: int):
             finally:
                 await store.close()
 
-            # Update task as completed
             await task_repo.mark_success(task_id, success_count=saved_count)
 
-            # Update Redis progress
             try:
                 await redis_storage.set_task_progress(
-                    task_id,
-                    {
-                        "status": "completed",
-                        "items_crawled": saved_posts,
-                    },
+                    task_id, {"status": "completed", "items_crawled": saved_count}
                 )
             except Exception:
                 pass
@@ -208,13 +230,11 @@ async def _execute_task_async(task_id: int):
                 await close_db()
             except Exception:
                 pass
-            
             try:
                 if 'crawler' in locals():
                     await crawler.close()
             except Exception:
                 pass
-            
             logger.info(f"Task {task_id} execution finished")
 
 
@@ -227,22 +247,6 @@ async def _update_task_failed(task_id: int, error: str):
     async with session_factory() as session:
         task_repo = TaskRepository(session)
         await task_repo.mark_failed(task_id, error_message=error)
-
-
-@celery_app.task(
-    name="app.workers.crawler_worker.download_media",
-    max_retries=2,
-    default_retry_delay=120,
-)
-def download_media(platform: str, url: str, source_id: str):
-    """Download media for a specific post."""
-    logger.info(f"Downloading media: {platform}/{source_id}")
-
-    try:
-        # Create a new loop for each media download task to avoid cross-loop issues
-        asyncio.run(_download_media_async(platform, url, source_id))
-    except Exception as e:
-        logger.error(f"Media download failed for {source_id}: {e}")
 
 
 async def _download_media_async(platform: str, url: str, source_id: str):
@@ -261,7 +265,6 @@ async def _download_media_async(platform: str, url: str, source_id: str):
         from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
         client = YtdlpClient()
-        # Use a dedicated folder for each post to capture all assets (video, thumb, json, subs)
         post_dir = media_storage.get_post_media_dir(platform, source_id)
         output = str(post_dir / "video")
         await client.download_video(url, output_template=output)

@@ -6,6 +6,7 @@ Stores platform user info across YouTube channels, Reddit users, TikTok creators
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -24,7 +25,12 @@ class Author(Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     follower_count: Mapped[int | None] = mapped_column(nullable=True)
     following_count: Mapped[int | None] = mapped_column(nullable=True)
-    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
+    visible_data: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

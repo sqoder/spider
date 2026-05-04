@@ -58,6 +58,10 @@ class PostRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_source_id(self, platform: str, source_id: str) -> Post | None:
+        """Compatibility alias used by storage implementations."""
+        return await self.get_by_platform_id(platform, source_id)
+
     async def list_posts(
         self,
         platform: str | None = None,

@@ -19,6 +19,9 @@ class CommentBase(BaseModel):
     parent_comment_id: str | None = None
     published_at: datetime | None = None
     raw_data: dict | None = None
+    visible_data: dict | None = None
+    raw_sources: dict | None = None
+    capture_meta: dict | None = None
 
 
 class CommentCreate(CommentBase):

@@ -26,13 +26,16 @@ class FileStoreImplement(BaseStore):
 
     def _get_file_path(self, item_type: str) -> Path:
         """
-        Generate path: {base}/{platform}/{format}/{crawler_type}_{item_type}_{date}.{format}
+        Generate path: {base}/{platform}/{subdir}/{crawler_type}_{item_type}_{date}.{format}
+        subdir defaults to the format name (csv/json/etc), overridable via save_data_subdir.
         """
         date_str = datetime.now().strftime("%Y-%m-%d")
-        platform_dir = self.base_dir / self.platform / self.file_type
+        settings = get_settings()
+        subdir = settings.save_data_subdir or self.file_type
+        platform_dir = self.base_dir / self.platform / subdir
         platform_dir.mkdir(parents=True, exist_ok=True)
         
-        filename = f"{self.crawler_type}_{item_type}_{date_str}.{self.file_type}"
+        filename = f"{self.crawler_type}_{item_type}.{self.file_type}"
         return platform_dir / filename
 
     async def store_content(self, items: List[dict]):
