@@ -10,6 +10,7 @@ from typing import Optional
 from loguru import logger
 
 from app.core.config import get_settings
+from app.core.exceptions import QuotaExhaustedError
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.api_client import YouTubeAPIClient
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
@@ -26,51 +27,57 @@ class YouTubeCrawler(BaseCrawler):
         self.ytdlp = YtdlpClient()
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
-        """Search YouTube videos by keyword."""
-        await self._rate_limit(cost=100)  # search.list costs 100 quota units
-        logger.info(f"YouTube search: '{keyword}', limit={limit}")
+        """Search YouTube videos by keyword with quota fallback."""
+        try:
+            await self._rate_limit(cost=100)  # search.list costs 100 quota units
+            logger.info(f"YouTube search: '{keyword}', limit={limit}")
 
-        results = []
-        page_token = None
-        remaining = limit
+            results = []
+            page_token = None
+            remaining = limit
 
-        while remaining > 0:
-            batch_size = min(remaining, 50)
-            response = await self.api.search_videos(
-                query=keyword,
-                max_results=batch_size,
-                page_token=page_token,
-            )
+            while remaining > 0:
+                batch_size = min(remaining, 50)
+                response = await self.api.search_videos(
+                    query=keyword,
+                    max_results=batch_size,
+                    page_token=page_token,
+                )
 
-            items = response.get("items", [])
-            if not items:
-                break
+                items = response.get("items", [])
+                if not items:
+                    break
 
-            # Get video IDs for detailed info
-            video_ids = [
-                item["id"]["videoId"] for item in items if item["id"].get("videoId")
-            ]
-            details_response = await self.api.get_video_details(video_ids)
-            details_map = {
-                item["id"]: item for item in details_response.get("items", [])
-            }
+                # Get video IDs for detailed info
+                video_ids = [
+                    item["id"]["videoId"] for item in items if item["id"].get("videoId")
+                ]
+                details_response = await self.api.get_video_details(video_ids)
+                details_map = {
+                    item["id"]: item for item in details_response.get("items", [])
+                }
 
-            for item in items:
-                video_id = item["id"].get("videoId")
-                if not video_id:
-                    continue
+                for item in items:
+                    video_id = item["id"].get("videoId")
+                    if not video_id:
+                        continue
 
-                detail = details_map.get(video_id, {})
-                result = self._parse_video(video_id, item.get("snippet", {}), detail)
-                results.append(result)
+                    detail = details_map.get(video_id, {})
+                    result = self._parse_video(video_id, item.get("snippet", {}), detail)
+                    results.append(result)
 
-            remaining -= len(items)
-            page_token = response.get("nextPageToken")
-            if not page_token:
-                break
+                remaining -= len(items)
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
 
-        logger.info(f"YouTube search returned {len(results)} results")
-        return results[:limit]
+            logger.info(f"YouTube search returned {len(results)} results")
+            return results[:limit]
+        except QuotaExhaustedError:
+            logger.warning("YouTube API Quota exhausted! Falling back to yt-dlp for search.")
+            from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+            crawler = YtdlpYouTubeCrawler()
+            return await crawler.search(keyword, limit)
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get videos from a YouTube channel by username/handle."""
@@ -163,50 +170,111 @@ class YouTubeCrawler(BaseCrawler):
         return result
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
-        """Get comments for a YouTube video."""
-        await self._rate_limit()
-        logger.info(f"YouTube comments: {post_id}, limit={limit}")
+        """Get comments for a YouTube video with quota fallback."""
+        try:
+            await self._rate_limit()
+            logger.info(f"YouTube comments: {post_id}, limit={limit}")
 
-        results = []
-        page_token = None
-        remaining = limit
+            results = []
+            page_token = None
+            remaining = limit
 
-        while remaining > 0:
-            batch_size = min(remaining, 100)
-            response = await self.api.get_comments(
-                video_id=post_id,
-                max_results=batch_size,
-                page_token=page_token,
-            )
-
-            items = response.get("items", [])
-            if not items:
-                break
-
-            for item in items:
-                top_comment = item["snippet"]["topLevelComment"]["snippet"]
-                comment = CommentResult(
-                    platform="youtube",
-                    source_id=item["id"],
-                    content=top_comment.get("textDisplay"),
-                    author_name=top_comment.get("authorDisplayName"),
-                    author_username=top_comment.get("authorChannelUrl", "").split("/")[
-                        -1
-                    ],
-                    author_id=top_comment.get("authorChannelId", {}).get("value"),
-                    like_count=top_comment.get("likeCount", 0),
-                    reply_count=item["snippet"].get("totalReplyCount", 0),
-                    published_at=self._parse_datetime(top_comment.get("publishedAt")),
-                    raw=item,
+            while remaining > 0:
+                batch_size = min(remaining, 100)
+                response = await self.api.get_comments(
+                    video_id=post_id,
+                    max_results=batch_size,
+                    page_token=page_token,
                 )
-                results.append(comment)
 
-            remaining -= len(items)
-            page_token = response.get("nextPageToken")
-            if not page_token:
+                items = response.get("items", [])
+                if not items:
+                    break
+
+                for item in items:
+                    top_comment_node = item["snippet"]["topLevelComment"]
+                    top_comment = top_comment_node["snippet"]
+                    comment_id = item["id"]
+                    
+                    # Add top-level comment
+                    comment = CommentResult(
+                        platform="youtube",
+                        source_id=comment_id,
+                        content=top_comment.get("textDisplay"),
+                        author_name=top_comment.get("authorDisplayName"),
+                        author_username=top_comment.get("authorChannelUrl", "").split("/")[
+                            -1
+                        ],
+                        author_id=top_comment.get("authorChannelId", {}).get("value"),
+                        like_count=top_comment.get("likeCount", 0),
+                        reply_count=item["snippet"].get("totalReplyCount", 0),
+                        published_at=self._parse_datetime(top_comment.get("publishedAt")),
+                        raw=item,
+                    )
+                    results.append(comment)
+
+                    # Fetch ALL replies if present
+                    total_replies = item["snippet"].get("totalReplyCount", 0)
+                    if total_replies > 0:
+                        replies = await self._fetch_all_replies(comment_id)
+                        results.extend(replies)
+
+                remaining -= len(items)
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+
+            return results[:limit]
+        except QuotaExhaustedError:
+            logger.warning("YouTube API Quota exhausted! Falling back to Playwright for comments.")
+            from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
+            crawler = PlaywrightYouTubeCrawler()
+            return await crawler.get_comments(post_id, limit)
+
+    async def _fetch_all_replies(self, parent_id: str) -> list[CommentResult]:
+        """Internal helper to fetch all replies for a comment thread via pagination."""
+        replies = []
+        page_token = None
+        
+        # Limit total replies per thread to avoid infinite loops/quota burn
+        max_thread_replies = 500
+        
+        while len(replies) < max_thread_replies:
+            try:
+                response = await self.api.get_comment_replies(
+                    parent_id=parent_id,
+                    page_token=page_token
+                )
+                
+                items = response.get("items", [])
+                if not items:
+                    break
+                    
+                for item in items:
+                    snippet = item["snippet"]
+                    reply = CommentResult(
+                        platform="youtube",
+                        source_id=item["id"],
+                        content=snippet.get("textDisplay"),
+                        author_name=snippet.get("authorDisplayName"),
+                        author_username=snippet.get("authorChannelUrl", "").split("/")[-1],
+                        author_id=snippet.get("authorChannelId", {}).get("value"),
+                        like_count=snippet.get("likeCount", 0),
+                        reply_count=0,
+                        parent_comment_id=parent_id,
+                        published_at=self._parse_datetime(snippet.get("publishedAt")),
+                        raw=item,
+                    )
+                    replies.append(reply)
+                    
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to fetch replies for {parent_id}: {e}")
                 break
-
-        return results[:limit]
+                
+        return replies
 
     # ---- Private helpers ----
 
@@ -238,15 +306,27 @@ class YouTubeCrawler(BaseCrawler):
                     "thumbnail_url": snippet.get("thumbnails", {})
                     .get("high", {})
                     .get("url"),
+                    "definition": content_details.get("definition"),
+                    "caption": content_details.get("caption") == "true",
                 }
             ],
+            tags=snippet.get("tags", []),
             published_at=self._parse_datetime(snippet.get("publishedAt")),
             raw=detail if detail else {"snippet": snippet},
         )
 
     async def _get_detail_via_ytdlp(self, url: str) -> CrawlResult:
-        """Fallback: get video details using yt-dlp."""
+        """Fallback: get video details using yt-dlp with enhanced metadata."""
         info = await self.ytdlp.extract_info(url)
+
+        # Extract chapters if available
+        chapters = []
+        for chapter in info.get("chapters", []):
+            chapters.append({
+                "start_time": chapter.get("start_time"),
+                "end_time": chapter.get("end_time"),
+                "title": chapter.get("title")
+            })
 
         return CrawlResult(
             platform="youtube",
@@ -269,8 +349,12 @@ class YouTubeCrawler(BaseCrawler):
                     "url": url,
                     "duration": info.get("duration"),
                     "formats_available": len(info.get("formats", [])),
+                    "chapters": chapters,
+                    "categories": info.get("categories", []),
+                    "subtitles": list(info.get("subtitles", {}).keys()) + list(info.get("automatic_captions", {}).keys())
                 }
             ],
+            tags=info.get("tags", []),
             published_at=self._parse_datetime(info.get("upload_date")),
             raw=info,
         )

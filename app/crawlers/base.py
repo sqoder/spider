@@ -41,6 +41,10 @@ class CrawlResult:
     media: list[dict] = field(default_factory=list)
     thumbnail_url: Optional[str] = None
 
+    # Extra Metadata
+    tags: list[str] = field(default_factory=list)
+    subtitles: list[dict] = field(default_factory=list)
+
     # Timestamps
     published_at: Optional[datetime] = None
 
@@ -69,6 +73,8 @@ class CrawlResult:
                 "view_count": self.view_count,
             },
             "media": self.media,
+            "tags": self.tags,
+            "subtitles": self.subtitles,
             "published_at": (
                 self.published_at.isoformat() if self.published_at else None
             ),

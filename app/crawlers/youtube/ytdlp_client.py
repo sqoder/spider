@@ -11,6 +11,7 @@ from loguru import logger
 
 from app.core.config import get_settings
 from app.core.exceptions import MediaDownloadError
+from app.core.proxy_manager import proxy_manager
 
 
 class YtdlpClient:
@@ -23,55 +24,77 @@ class YtdlpClient:
         settings = get_settings()
         self.download_dir = settings.media_path / "youtube"
         self.download_dir.mkdir(parents=True, exist_ok=True)
-        self.proxy = settings.proxy_url
+
+    async def _run_command(self, cmd: list[str], url: str, timeout: int = 300, retry_count: int = 2) -> tuple[bytes, bytes, int]:
+        """Run yt-dlp command with proxy rotation and retries."""
+        for attempt in range(retry_count + 1):
+            current_cmd = cmd.copy()
+            if proxy_manager.enabled:
+                proxy_url = proxy_manager.get_proxy()
+                if proxy_url:
+                    current_cmd.extend(["--proxy", proxy_url])
+
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *current_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    limit=1024 * 1024 * 50,
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                
+                if process.returncode == 0 or stdout:
+                    return stdout, stderr, process.returncode
+                
+                error_msg = stderr.decode("utf-8", errors="replace").strip()
+                if attempt < retry_count:
+                    logger.warning(f"yt-dlp command failed (attempt {attempt+1}): {error_msg}. Retrying with different proxy...")
+                    continue
+            except asyncio.TimeoutError:
+                if attempt < retry_count:
+                    logger.warning(f"yt-dlp command timed out (attempt {attempt+1}). Retrying...")
+                    continue
+                raise MediaDownloadError(url, f"Timed out after {retry_count} retries")
+            except Exception as e:
+                logger.error(f"Unexpected error running yt-dlp: {e}")
+                raise MediaDownloadError(url, str(e))
+        
+        return b"", b"", 1
 
     async def extract_info(self, url: str) -> dict[str, Any]:
-        """
-        Extract metadata from a URL without downloading.
-
-        Args:
-            url: Video URL
-
-        Returns:
-            Dict with video metadata (title, duration, formats, etc.)
-        """
+        """Extract metadata from a URL without downloading."""
         cmd = [
             "yt-dlp",
             "--dump-json",
             "--no-download",
             "--no-playlist",
+            "--ignore-errors",
+            "--write-comments",
+            "--write-subs",
+            "--write-auto-subs",
+            "--write-thumbnail",
+            "--write-info-json",
+            "--sub-langs", "en,zh-Hans,zh-Hant",
             url,
         ]
-        if self.proxy:
-            cmd.extend(["--proxy", self.proxy])
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+        stdout, stderr, returncode = await self._run_command(cmd, url)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode("utf-8", errors="replace").strip()
-                logger.error(f"yt-dlp info extraction failed: {error_msg}")
-                raise MediaDownloadError(url, error_msg)
+        if returncode != 0 and not stdout:
+            error_msg = stderr.decode("utf-8", errors="replace").strip()
+            raise MediaDownloadError(url, error_msg)
 
-            return json.loads(stdout.decode("utf-8"))
+        if not stdout:
+            raise MediaDownloadError(url, "yt-dlp returned empty output")
 
-        except asyncio.TimeoutError:
-            raise MediaDownloadError(url, "yt-dlp metadata extraction timed out")
-        except json.JSONDecodeError as e:
-            raise MediaDownloadError(url, f"Failed to parse yt-dlp output: {e}")
+        return json.loads(stdout.decode("utf-8"))
 
     async def extract_multiple_info(self, url_or_query: str, limit: int = None) -> list[dict[str, Any]]:
-        """
-        Extract metadata for multiple items (search or playlist).
-        """
+        """Extract metadata for multiple items (search or playlist)."""
         cmd = [
             "yt-dlp",
             "--dump-json",
+            "--flat-playlist",
             "--no-download",
             "--ignore-errors",
             url_or_query,
@@ -79,29 +102,16 @@ class YtdlpClient:
         if limit:
             cmd.extend(["--playlist-end", str(limit)])
             
-        if self.proxy:
-            cmd.extend(["--proxy", self.proxy])
+        stdout, stderr, _ = await self._run_command(cmd, url_or_query)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                limit=1024 * 1024 * 10,
-            )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
-
-            results = []
-            for line in stdout.decode("utf-8").strip().split("\n"):
-                if line.strip():
-                    try:
-                        results.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-            return results
-
-        except asyncio.TimeoutError:
-            raise MediaDownloadError(url_or_query, "yt-dlp extraction timed out")
+        results = []
+        for line in stdout.decode("utf-8").strip().split("\n"):
+            if line.strip():
+                try:
+                    results.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return results
 
     async def download_video(
         self,
@@ -110,133 +120,77 @@ class YtdlpClient:
         output_template: Optional[str] = None,
         max_quality: str = "720",
     ) -> Path:
-        """
-        Download a video.
-
-        Args:
-            url: Video URL
-            format_id: Specific format ID to download
-            output_template: Custom output filename template
-            max_quality: Maximum video height (e.g., '720', '1080')
-
-        Returns:
-            Path to the downloaded file
-        """
+        """Download a video."""
         if output_template is None:
             output_template = str(self.download_dir / "%(id)s.%(ext)s")
 
         cmd = [
             "yt-dlp",
-            "-o",
-            output_template,
+            "-o", f"{output_template}.%(ext)s" if "%(ext)s" not in output_template else output_template,
             "--no-playlist",
+            "--ignore-errors",
             "--write-thumbnail",
-            "--convert-thumbnails",
-            "jpg",
+            "--convert-thumbnails", "jpg",
+            "--write-info-json",
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-langs", "en,zh-Hans,zh-Hant",
+            "--convert-subs", "srt",
+            "--add-metadata",
+            "--embed-subs",
+            "--embed-thumbnail",
+            "--embed-chapters",
         ]
 
         if format_id:
             cmd.extend(["-f", format_id])
         else:
-            # Best video up to max_quality + best audio, merged
-            cmd.extend(
-                [
-                    "-f",
-                    f"bestvideo[height<={max_quality}]+bestaudio/best[height<={max_quality}]",
-                    "--merge-output-format",
-                    "mp4",
-                ]
-            )
-
-        if self.proxy:
-            cmd.extend(["--proxy", self.proxy])
+            quality = max_quality or "2160"
+            cmd.extend([
+                "-f", f"bestvideo[height<={quality}]+bestaudio/best/best[height<={quality}]",
+                "--merge-output-format", "mp4",
+            ])
 
         cmd.append(url)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=600  # 10 min timeout for downloads
-            )
+        stdout, stderr, returncode = await self._run_command(cmd, url, timeout=600)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode("utf-8", errors="replace").strip()
-                logger.error(f"yt-dlp download failed: {error_msg}")
-                raise MediaDownloadError(url, error_msg)
+        if returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="replace").strip()
+            raise MediaDownloadError(url, error_msg)
 
-            # Parse output to find the downloaded file
-            output_lines = stdout.decode("utf-8").strip().split("\n")
-            logger.info(f"Video downloaded successfully: {url}")
+        # Parse output to find the downloaded file
+        output_lines = stdout.decode("utf-8").strip().split("\n")
+        for line in output_lines:
+            if "Destination:" in line or "has already been downloaded" in line:
+                filepath = line.split("Destination: ")[-1].strip() if "Destination:" in line else ""
+                if filepath:
+                    return Path(filepath)
 
-            # Try to find the output file
-            for line in output_lines:
-                if "Destination:" in line or "has already been downloaded" in line:
-                    filepath = (
-                        line.split("Destination: ")[-1].strip()
-                        if "Destination:" in line
-                        else ""
-                    )
-                    if filepath:
-                        return Path(filepath)
-
-            # Fallback: look for the file in download dir
-            return self.download_dir
-
-        except asyncio.TimeoutError:
-            raise MediaDownloadError(url, "Download timed out (10 min limit)")
+        return self.download_dir
 
     async def download_audio(
         self,
         url: str,
         output_template: Optional[str] = None,
     ) -> Path:
-        """
-        Download audio only (as MP3).
-
-        Args:
-            url: Video URL
-            output_template: Custom output filename template
-
-        Returns:
-            Path to the downloaded audio file
-        """
+        """Download audio only (as MP3)."""
         if output_template is None:
             output_template = str(self.download_dir / "%(id)s.%(ext)s")
 
         cmd = [
             "yt-dlp",
-            "-o",
-            output_template,
+            "-o", output_template,
             "--no-playlist",
-            "-x",  # Extract audio
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "192K",
+            "--ignore-errors",
+            "-x", "--audio-format", "mp3", "--audio-quality", "192K",
             url,
         ]
 
-        if self.proxy:
-            cmd.extend(["--proxy", self.proxy])
+        stdout, stderr, returncode = await self._run_command(cmd, url)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+        if returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="replace").strip()
+            raise MediaDownloadError(url, error_msg)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode("utf-8", errors="replace").strip()
-                raise MediaDownloadError(url, error_msg)
-
-            logger.info(f"Audio downloaded successfully: {url}")
-            return self.download_dir
-
-        except asyncio.TimeoutError:
-            raise MediaDownloadError(url, "Audio download timed out")
+        return self.download_dir

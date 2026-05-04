@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # ---- Storage Options ----
+    # Supported: csv, db, json, jsonl, sqlite, excel, postgres
+    save_data_option: str = "jsonl"
+    save_data_path: str = "data"
+
     # ---- Application ----
     app_name: str = "GlobalMediaCrawler"
     app_env: str = "development"
@@ -52,6 +57,7 @@ class Settings(BaseSettings):
     # ---- YouTube ----
     youtube_api_key: Optional[str] = None
     youtube_daily_quota: int = 10000
+    youtube_use_scraper: bool = True  # Default to True for "native crawler" preference
 
     # ---- Reddit ----
     reddit_client_id: Optional[str] = None

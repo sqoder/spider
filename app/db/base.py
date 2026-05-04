@@ -22,3 +22,10 @@ class Base(DeclarativeBase):
     """Base class for all SQLAlchemy ORM models."""
 
     metadata = metadata
+
+    def to_dict(self):
+        """Convert the model instance to a dictionary."""
+        return {
+            field.name: getattr(self, field.name)
+            for field in self.__table__.columns
+        }

@@ -16,11 +16,24 @@ register_all_crawlers()
 
 def _run_async(coro):
     """Helper to run async code in Celery worker."""
-    loop = asyncio.new_event_loop()
     try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    if loop.is_running():
+        # This shouldn't happen in a standard Celery worker, 
+        # but if it does, we need to run it in a thread or use nest_asyncio
+        import nest_asyncio
+        nest_asyncio.apply()
         return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    else:
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            # Don't close the loop, reuse it for the next task in this process
+            pass
 
 
 @celery_app.task(
@@ -135,42 +148,44 @@ async def _execute_task_async(task_id: int):
                 await crawler.close()
                 return
 
-            # Save results
-            saved_posts = 0
-            for r in results:
-                author_id = None
-                if r.author_id:
-                    author_data = AuthorCreate(
-                        platform=r.platform,
-                        source_id=r.author_id,
-                        username=r.author_username,
-                        display_name=r.author_name,
-                        profile_url=r.author_url,
-                        avatar_url=r.author_avatar,
-                    )
-                    author = await author_repo.create_or_update(author_data)
-                    author_id = author.id
+            # Unified storage via factory
+            from app.storage.factory import StoreFactory
+            store = StoreFactory.create_store(task.platform, task.task_type)
+            
+            try:
+                # 1. Store main contents
+                if task.task_type != "comments":
+                    results_dicts = [r.to_dict() for r in results]
+                    await store.store_content(results_dicts)
+                    
+                    # Store authors
+                    authors = [r.to_dict().get("author") for r in results if r.to_dict().get("author")]
+                    if authors:
+                        await store.store_creator(authors)
+                
+                # 2. Store comments (either from post detail or explicit comment task)
+                if task.task_type == "comments":
+                    post_id_str = (task.params or {}).get("post_id", "")
+                    await store.store_comment(post_id_str, [c.to_dict() for c in results])
+                else:
+                    for r in results:
+                        if r.raw.get("comments"):
+                            await store.store_comment(r.source_id, r.raw["comments"])
 
-                post_data = PostCreate(
-                    platform=r.platform,
-                    source_id=r.source_id,
-                    author_id=author_id,
-                    url=r.url,
-                    title=r.title,
-                    content=r.content,
-                    post_type=r.content_type,
-                    published_at=r.published_at,
-                    like_count=r.like_count,
-                    comment_count=r.comment_count,
-                    share_count=r.share_count,
-                    view_count=r.view_count,
-                    raw_data=r.raw,
-                )
-                await post_repo.create_or_update(post_data)
-                saved_posts += 1
+                # 3. Handle media downloads and completion tracking
+                saved_count = len(results)
+                for r in results:
+                    if task.task_type in ("post_detail", "url_parse"):
+                        try:
+                            from app.workers.crawler_worker import download_media
+                            download_media.delay(task.platform, task.url, r.source_id)
+                        except Exception as e:
+                            logger.error(f"Failed to queue media download for {r.source_id}: {e}")
+            finally:
+                await store.close()
 
             # Update task as completed
-            await task_repo.mark_success(task_id, success_count=saved_posts)
+            await task_repo.mark_success(task_id, success_count=saved_count)
 
             # Update Redis progress
             try:
@@ -184,12 +199,23 @@ async def _execute_task_async(task_id: int):
             except Exception:
                 pass
 
-            await crawler.close()
-            logger.info(f"Task {task_id} completed: {saved_posts} items saved")
-
         except Exception as e:
             await task_repo.mark_failed(task_id, error_message=str(e))
             raise
+        finally:
+            try:
+                from app.db.session import close_db
+                await close_db()
+            except Exception:
+                pass
+            
+            try:
+                if 'crawler' in locals():
+                    await crawler.close()
+            except Exception:
+                pass
+            
+            logger.info(f"Task {task_id} execution finished")
 
 
 async def _update_task_failed(task_id: int, error: str):
@@ -213,7 +239,8 @@ def download_media(platform: str, url: str, source_id: str):
     logger.info(f"Downloading media: {platform}/{source_id}")
 
     try:
-        _run_async(_download_media_async(platform, url, source_id))
+        # Create a new loop for each media download task to avoid cross-loop issues
+        asyncio.run(_download_media_async(platform, url, source_id))
     except Exception as e:
         logger.error(f"Media download failed for {source_id}: {e}")
 
@@ -234,7 +261,9 @@ async def _download_media_async(platform: str, url: str, source_id: str):
         from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
         client = YtdlpClient()
-        output = str(media_storage.get_media_path(platform, source_id))
+        # Use a dedicated folder for each post to capture all assets (video, thumb, json, subs)
+        post_dir = media_storage.get_post_media_dir(platform, source_id)
+        output = str(post_dir / "video")
         await client.download_video(url, output_template=output)
 
     elif platform in ("instagram",):

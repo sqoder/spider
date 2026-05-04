@@ -30,13 +30,13 @@ class CrawlerFactory:
     @classmethod
     def create(cls, platform: str) -> BaseCrawler:
         """
-        Create a crawler instance for the specified platform.
+        Create a crawler instance for the given platform.
 
         Args:
-            platform: Platform identifier (e.g., 'youtube', 'reddit', 'tiktok')
+            platform: Platform name (youtube, reddit, etc.)
 
         Returns:
-            Instance of the platform-specific crawler
+            An instance of a class inheriting from BaseCrawler
 
         Raises:
             PlatformNotSupportedError: If the platform is not registered
@@ -45,9 +45,21 @@ class CrawlerFactory:
         if platform not in cls._registry:
             raise PlatformNotSupportedError(platform)
 
+        # Special handling for YouTube smart fallback
+        if platform == "youtube":
+            from app.core.config import get_settings
+            settings = get_settings()
+            
+            # Use scraper if forced or if no API key is provided
+            if settings.youtube_use_scraper or not settings.youtube_api_key:
+                logger.info("Using YouTube native scraper mode (yt-dlp/Playwright).")
+                from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+                return YtdlpYouTubeCrawler()
+
         crawler_class = cls._registry[platform]
         logger.info(f"Creating crawler for platform: {platform}")
         return crawler_class()
+
 
     @classmethod
     def get_supported_platforms(cls) -> list[str]:

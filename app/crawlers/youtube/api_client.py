@@ -13,6 +13,7 @@ from loguru import logger
 from app.core.config import get_settings
 from app.core.exceptions import (APIKeyMissingError, CrawlError,
                                  QuotaExhaustedError)
+from app.core.proxy_manager import proxy_manager
 
 
 class YouTubeAPIClient:
@@ -62,26 +63,36 @@ class YouTubeAPIClient:
                 quota_limit=self.daily_quota,
             )
 
-    async def _request(self, endpoint: str, params: dict) -> dict:
-        """Make an API request with quota tracking."""
+    async def _request(self, endpoint: str, params: dict, retry_count: int = 2) -> dict:
+        """Make an API request with quota tracking and proxy rotation."""
         self._check_quota(endpoint)
 
         params["key"] = self.api_key
         url = f"/{endpoint}"
 
-        try:
-            response = await self._client.get(url, params=params)
-            response.raise_for_status()
-            self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"YouTube API error: {e.response.status_code} - {e.response.text}"
-            )
-            raise CrawlError("youtube", endpoint, str(e))
-        except httpx.RequestError as e:
-            logger.error(f"YouTube API request failed: {e}")
-            raise CrawlError("youtube", endpoint, str(e))
+        for attempt in range(retry_count + 1):
+            proxies = None
+            if proxy_manager.enabled:
+                proxy_url = proxy_manager.get_proxy()
+                if proxy_url:
+                    proxies = {"http://": proxy_url, "https://": proxy_url}
+
+            try:
+                if proxies:
+                    async with httpx.AsyncClient(proxies=proxies, timeout=30.0) as client:
+                        response = await client.get(self.BASE_URL + url, params=params)
+                else:
+                    response = await self._client.get(url, params=params)
+                
+                response.raise_for_status()
+                self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
+                return response.json()
+            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+                if attempt < retry_count:
+                    logger.warning(f"YouTube API request failed (attempt {attempt+1}): {e}. Retrying...")
+                    continue
+                logger.error(f"YouTube API error after {retry_count} retries: {e}")
+                raise CrawlError("youtube", endpoint, str(e))
 
     async def search_videos(
         self,
@@ -206,6 +217,34 @@ class YouTubeAPIClient:
             params["pageToken"] = page_token
 
         return await self._request("commentThreads", params)
+
+    async def get_comment_replies(
+        self,
+        parent_id: str,
+        max_results: int = 100,
+        page_token: Optional[str] = None,
+    ) -> dict:
+        """
+        Get all replies for a specific comment thread.
+
+        Args:
+            parent_id: The ID of the parent comment
+            max_results: Maximum replies per request (1-100)
+            page_token: Pagination token
+
+        Returns:
+            API response dict with comments (replies)
+        """
+        params = {
+            "part": "snippet",
+            "parentId": parent_id,
+            "maxResults": min(max_results, 100),
+            "textFormat": "plainText",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        return await self._request("comments", params)
 
     @property
     def quota_remaining(self) -> int:

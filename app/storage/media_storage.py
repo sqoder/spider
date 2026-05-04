@@ -27,11 +27,19 @@ class MediaStorage:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def get_post_media_dir(self, platform: str, source_id: str) -> Path:
+        """Get or create a dedicated directory for a post's media files."""
+        platform_dir = self.get_platform_dir(platform)
+        post_dir = platform_dir / source_id
+        post_dir.mkdir(parents=True, exist_ok=True)
+        return post_dir
+
     def get_media_path(
         self,
         platform: str,
         source_id: str,
         extension: str = "mp4",
+        use_post_dir: bool = False,
     ) -> Path:
         """
         Generate a consistent file path for a media item.
@@ -40,10 +48,16 @@ class MediaStorage:
             platform: Platform name
             source_id: Platform-specific content ID
             extension: File extension
+            use_post_dir: If True, put file inside a dedicated directory for this source_id
 
         Returns:
             Full path where the media should be stored
         """
+        if use_post_dir:
+            post_dir = self.get_post_media_dir(platform, source_id)
+            # Standard naming within the folder
+            return post_dir / f"video.{extension.lstrip('.')}"
+        
         platform_dir = self.get_platform_dir(platform)
         filename = f"{source_id}.{extension.lstrip('.')}"
         return platform_dir / filename

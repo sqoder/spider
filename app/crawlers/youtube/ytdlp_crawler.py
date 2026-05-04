@@ -41,11 +41,24 @@ class YtdlpYouTubeCrawler(BaseCrawler):
         return self._parse_info(info)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
-        logger.warning("[yt-dlp] get_comments is not fully implemented for yt-dlp fallback")
-        return []
+        """Fetch comments using Playwright as a helper for the native scraper mode."""
+        logger.info(f"[Scraper] Fetching comments for {post_id} using Playwright helper")
+        from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
+        async with PlaywrightYouTubeCrawler() as pw_crawler:
+            return await pw_crawler.get_comments(post_id, limit)
 
     def _parse_info(self, info: dict) -> CrawlResult:
         url = info.get("original_url") or info.get("webpage_url") or f"https://www.youtube.com/watch?v={info.get('id')}"
+        
+        # Extract chapters
+        chapters = []
+        for chapter in info.get("chapters", []):
+            chapters.append({
+                "start_time": chapter.get("start_time"),
+                "end_time": chapter.get("end_time"),
+                "title": chapter.get("title")
+            })
+
         return CrawlResult(
             platform="youtube",
             source_id=info.get("id", ""),
@@ -61,12 +74,16 @@ class YtdlpYouTubeCrawler(BaseCrawler):
             comment_count=info.get("comment_count", 0) or 0,
             view_count=info.get("view_count", 0) or 0,
             thumbnail_url=info.get("thumbnail"),
+            tags=info.get("tags", []),
             media=[
                 {
                     "type": "video",
                     "url": url,
                     "duration": info.get("duration"),
                     "formats_available": len(info.get("formats", [])),
+                    "chapters": chapters,
+                    "categories": info.get("categories", []),
+                    "subtitles": list(info.get("subtitles", {}).keys()) + list(info.get("automatic_captions", {}).keys())
                 }
             ],
             published_at=self._parse_datetime(info.get("upload_date")),
