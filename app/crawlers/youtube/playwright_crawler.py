@@ -6,14 +6,19 @@ Mimics MediaCrawler by using direct web scraping (Playwright) to bypass API Key 
 import asyncio
 import json
 import re
+import time
 from datetime import datetime
 from typing import Optional
+from urllib.parse import quote_plus
 
 from loguru import logger
-from playwright.async_api import Page, async_playwright
+from playwright.async_api import Page
 
+from app.core.browser_manager import browser_manager
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
-
+from app.crawlers.youtube.innertube_client import InnertubeClient
+from app.core.config import get_settings
+from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
 class PlaywrightYouTubeCrawler(BaseCrawler):
     """
@@ -25,24 +30,52 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
 
     def __init__(self):
         super().__init__()
-        self._playwright = None
-        self._browser = None
+        self.settings = get_settings()
+        self.ytdlp = YtdlpClient()
 
-    async def _init_browser(self):
-        if not self._browser:
-            self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=True)
+    async def _handle_consent(self, page: Page):
+        """Automatically click 'Accept All' on EU privacy popups."""
+        try:
+            # Common selectors for YouTube's consent dialog
+            selectors = [
+                "button[aria-label='Accept all']",
+                "button:has-text('Accept all')",
+                "ytd-button-renderer:has-text('Accept all')",
+                "form[action='https://consent.youtube.com/save'] button"
+            ]
+            for selector in selectors:
+                try:
+                    # Wait briefly for the element
+                    btn = page.locator(selector).first
+                    if await btn.is_visible(timeout=2000):
+                        await btn.click()
+                        await asyncio.sleep(1) 
+                        logger.info("[Playwright] Handled privacy consent popup.")
+                        return
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"[Playwright] No consent popup found or handled: {e}")
+
+    async def _goto_with_consent(self, page: Page, url: str):
+        """Navigate to URL and handle consent popup."""
+        await page.goto(url, wait_until="domcontentloaded")
+        await self._handle_consent(page)
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """Search YouTube using Playwright by parsing ytInitialData."""
+        await self._rate_limit()
         logger.info(f"[Playwright] Searching YouTube: {keyword}")
-        await self._init_browser()
-        page = await self._browser.new_page()
+        page = await browser_manager.new_page(
+            cookies_file=self.settings.youtube_cookies_file,
+            locale="en-US",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
 
         results = []
         try:
-            url = f"https://www.youtube.com/results?search_query={keyword}"
-            await page.goto(url, wait_until="domcontentloaded")
+            url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}"
+            await self._goto_with_consent(page, url)
 
             # YouTube stores the initial data in a global window variable `ytInitialData`
             # We can evaluate javascript to extract it directly!
@@ -112,7 +145,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         except Exception as e:
             logger.error(f"[Playwright] Search failed: {e}")
         finally:
-            await page.close()
+            await browser_manager.close_context(page)
 
         return results
 
@@ -123,12 +156,16 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
 
     async def get_post_detail(self, url: str) -> CrawlResult:
         """Extract video details using Playwright by parsing ytInitialData."""
+        await self._rate_limit()
         logger.info(f"[Playwright] Extracting video detail: {url}")
-        await self._init_browser()
-        page = await self._browser.new_page()
+        page = await browser_manager.new_page(
+            cookies_file=self.settings.youtube_cookies_file,
+            locale="en-US",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
 
         try:
-            await page.goto(url, wait_until="domcontentloaded")
+            await self._goto_with_consent(page, url)
             # Wait a bit for the data to be injected into window
             await asyncio.sleep(1)
             
@@ -163,8 +200,35 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             author_url = owner.get("navigationEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
             author_username = author_url.split("/")[-1] if author_url else ""
             
-            description = video_secondary_info.get("description", {}).get("runs", [])
-            description_text = "".join([r.get("text", "") for r in description])
+            # Robust Description Extraction
+            description_text = ""
+            # Path 1: Standard secondary info
+            description_runs = video_secondary_info.get("description", {}).get("runs", [])
+            if description_runs:
+                description_text = "".join([r.get("text", "") for r in description_runs])
+            
+            # Path 2: Fallback to engagementPanels (new YouTube UI)
+            if not description_text:
+                panels = yt_data.get("engagementPanels", [])
+                for panel in panels:
+                    if "structuredDescriptionContentRenderer" in str(panel):
+                        # Simple string search or deep extraction
+                        try:
+                            # Try to find all 'text' fields in the panel
+                            def find_all_text(obj):
+                                texts = []
+                                if isinstance(obj, dict):
+                                    if "text" in obj and isinstance(obj["text"], str):
+                                        texts.append(obj["text"])
+                                    for v in obj.values():
+                                        texts.extend(find_all_text(v))
+                                elif isinstance(obj, list):
+                                    for i in obj:
+                                        texts.extend(find_all_text(i))
+                                return texts
+                            description_text = "\n".join(find_all_text(panel))
+                            break
+                        except Exception: continue
 
             return CrawlResult(
                 platform="youtube",
@@ -183,42 +247,113 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             logger.error(f"[Playwright] Detail extraction failed: {e}")
             return CrawlResult(platform=self.platform, source_id="error", url=url)
         finally:
-            await page.close()
+            await browser_manager.close_context(page)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
-        """Extract comments using Playwright by scrolling and parsing the DOM."""
-        url = f"https://www.youtube.com/watch?v={post_id}"
-        logger.info(f"[Playwright] Extracting comments for: {url}")
-        await self._init_browser()
-        page = await self._browser.new_page()
+        """Extract comments with multi-tier fallbacks: Innertube -> yt-dlp -> Playwright."""
+        await self._rate_limit()
+        logger.info(f"[YouTube] Multi-tier comment extraction for: {post_id}")
+
+        # Tier 1: yt-dlp (handles replies natively, most robust)
+        try:
+            logger.info(f"[yt-dlp] Extracting comments for {post_id}")
+            url = f"https://www.youtube.com/watch?v={post_id}"
+            info = await self.ytdlp.extract_info_with_comments(url, max_comments=limit)
+            ytdlp_comments = info.get("comments", [])
+            # yt-dlp 成功返回的结果（包括空列表）直接使用，只有异常才走 Innertube 兜底
+            results = []
+            for c in ytdlp_comments[:limit]:
+                parent = c.get("parent", "")
+                parent_id = None if parent in ("root", "none", post_id) else parent
+                results.append(CommentResult(
+                    platform="youtube",
+                    source_id=c.get("id", ""),
+                    content=c.get("text", ""),
+                    author_name=c.get("author", ""),
+                    author_id=c.get("author_id") or c.get("author_channel_id"),
+                    like_count=c.get("like_count", 0) or 0,
+                    reply_count=c.get("reply_count", 0) or 0,
+                    parent_comment_id=parent_id,
+                    published_at=datetime.fromtimestamp(c.get("timestamp", 0)) if c.get("timestamp") else None,
+                ))
+            logger.info(f"[yt-dlp] Success: extracted {len(results)} comments")
+            return results
+        except Exception as e:
+            logger.warning(f"[yt-dlp] Failed: {e}")
+
+        # Tier 2: Innertube API (Fast fallback)
+        innertube = InnertubeClient()
+        try:
+            results = await innertube.get_comments(post_id, limit)
+            if results:
+                logger.info(f"[Innertube] Success: fetched {len(results)} comments")
+                return results
+        except Exception as e:
+            logger.warning(f"[Innertube] Failed: {e}")
+        finally:
+            await innertube.close()
+
+        # Tier 3: Playwright Scrolling (Visual Fallback)
+        logger.info(f"[Playwright] Falling back to visual scrolling for {post_id}")
+        page = await browser_manager.new_page(
+            cookies_file=self.settings.youtube_cookies_file,
+            locale="en-US",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
 
         results = []
         try:
-            await page.goto(url, wait_until="domcontentloaded")
+            await self._goto_with_consent(page, url)
+            await asyncio.sleep(2) # Wait for page load
             
-            # Scroll down to trigger comment loading
-            await page.evaluate("window.scrollTo(0, 800)")
+            # 1. Human-like interaction: Click the page to focus
+            await page.mouse.click(100, 100)
+            
+            # 2. Scroll to the comment section
+            # Different YouTube versions have comments at different positions
+            await page.evaluate("window.scrollTo(0, 1000)")
             await asyncio.sleep(2)
             
-            # YouTube comments are loaded asynchronously. 
-            # We scroll multiple times to get more comments.
-            for _ in range(min(5, (limit // 20) + 1)):
-                await page.keyboard.press("PageDown")
-                await asyncio.sleep(1)
-
-            # Extract comment elements
+            # Use multiple selector strategies
             comment_selectors = [
                 "ytd-comment-thread-renderer",
-                "ytd-comment-renderer"
+                "#comments",
+                "ytd-item-section-renderer[section-identifier='comment-item-section']"
             ]
             
-            # This is a fallback: direct DOM parsing if ytInitialData isn't enough for comments
-            # For a more robust solution, we'd intercept the network responses.
+            found = False
+            for selector in comment_selectors:
+                try:
+                    await page.wait_for_selector(selector, timeout=15000)
+                    found = True
+                    break
+                except: continue
+            
+            if not found:
+                logger.warning(f"[Playwright] Could not find comment section via selectors. Forcing scroll.")
+                for _ in range(3):
+                    await page.keyboard.press("PageDown")
+                    await asyncio.sleep(2)
+
+            # 3. Aggressive scrolling to load more
+            last_len = 0
+            for _ in range(5):
+                await page.keyboard.press("End")
+                await asyncio.sleep(2)
+                current_elements = await page.query_selector_all("ytd-comment-thread-renderer")
+                if len(current_elements) >= limit or (len(current_elements) == last_len and last_len > 0):
+                    break
+                last_len = len(current_elements)
+
+            # 4. Extract with fallback selectors
             elements = await page.query_selector_all("ytd-comment-thread-renderer")
+            logger.info(f"[Playwright] Found {len(elements)} comments")
+            
             for el in elements:
                 try:
-                    content_el = await el.query_selector("#content-text")
-                    author_el = await el.query_selector("#author-text")
+                    # Try different paths for content
+                    content_el = await el.query_selector("#content-text") or await el.query_selector("yt-formatted-string")
+                    author_el = await el.query_selector("#author-text") or await el.query_selector("#author-name")
                     
                     if content_el and author_el:
                         content = await content_el.inner_text()
@@ -229,18 +364,16 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                             source_id=f"pw_{len(results)}",
                             content=content,
                             author_name=author_name,
-                            published_at=datetime.now(), # Approximate
+                            published_at=datetime.now(),
                         ))
-                except:
-                    continue
+                except: continue
                 
-                if len(results) >= limit:
-                    break
+                if len(results) >= limit: break
 
         except Exception as e:
-            logger.error(f"[Playwright] Comment extraction failed: {e}")
+            logger.error(f"[Playwright] Final fallback comment extraction failed: {e}")
         finally:
-            await page.close()
+            await browser_manager.close_context(page)
 
         return results
 
@@ -255,11 +388,9 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             return int(float(text.replace("m", "")) * 1000000)
         try:
             return int(float(text))
-        except:
+        except (ValueError, TypeError):
             return 0
 
     async def close(self) -> None:
-        if self._browser:
-            await self._browser.close()
-        if self._playwright:
-            await self._playwright.stop()
+        """BrowserManager handles browser lifecycle."""
+        pass

@@ -20,10 +20,24 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # ---- Mode ----
+    # simple_mode: disables Celery/Redis dependency for local dev
+    simple_mode: bool = True
+    # Data directory for SQLite DB and file storage
+    data_dir: str = "data"
+
     # ---- Storage Options ----
     # Supported: csv, db, json, jsonl, sqlite, excel, postgres
     save_data_option: str = "jsonl"
     save_data_path: str = "data"
+    # Subdirectory name under {platform}/ (defaults to the format name, e.g. "csv")
+    save_data_subdir: Optional[str] = None
+
+    @property
+    def data_path(self) -> Path:
+        path = Path(self.data_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     # ---- Application ----
     app_name: str = "GlobalMediaCrawler"
@@ -51,7 +65,7 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
 
     # ---- Media Storage ----
-    media_storage_path: str = "./media"
+    media_storage_path: str = "./output"
     media_max_size_mb: int = 500
 
     # ---- YouTube ----
@@ -84,6 +98,13 @@ class Settings(BaseSettings):
     reddit_rate_period: int = 60
     tiktok_rate_limit: int = 20
     tiktok_rate_period: int = 60
+
+    # ---- Crawl Controls ----
+    crawl_search_limit: int = 10
+    crawl_comments_enabled: bool = True
+    crawl_comments_count: int = 50
+    crawl_comments_include_replies: bool = False
+    crawl_media_enabled: bool = True
 
     # ---- Proxy ----
     proxy_url: Optional[str] = None

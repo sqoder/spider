@@ -50,6 +50,9 @@ class CrawlResult:
 
     # Raw API response
     raw: dict[str, Any] = field(default_factory=dict)
+    visible_data: dict[str, Any] = field(default_factory=dict)
+    raw_sources: dict[str, Any] = field(default_factory=dict)
+    capture_meta: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Convert to the unified data format."""
@@ -65,6 +68,7 @@ class CrawlResult:
                 "name": self.author_name,
                 "username": self.author_username,
                 "url": self.author_url,
+                "avatar": self.author_avatar,
             },
             "metrics": {
                 "like_count": self.like_count,
@@ -79,6 +83,9 @@ class CrawlResult:
                 self.published_at.isoformat() if self.published_at else None
             ),
             "raw": self.raw,
+            "visible_data": self.visible_data,
+            "raw_sources": self.raw_sources,
+            "capture_meta": self.capture_meta,
         }
 
 
@@ -97,6 +104,29 @@ class CommentResult:
     parent_comment_id: Optional[str] = None
     published_at: Optional[datetime] = None
     raw: dict[str, Any] = field(default_factory=dict)
+    visible_data: dict[str, Any] = field(default_factory=dict)
+    raw_sources: dict[str, Any] = field(default_factory=dict)
+    capture_meta: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "platform": self.platform,
+            "source_id": self.source_id,
+            "content": self.content,
+            "author_name": self.author_name,
+            "author_username": self.author_username,
+            "author_id": self.author_id,
+            "like_count": self.like_count,
+            "reply_count": self.reply_count,
+            "parent_comment_id": self.parent_comment_id,
+            "published_at": (
+                self.published_at.isoformat() if self.published_at else None
+            ),
+            "raw": self.raw,
+            "visible_data": self.visible_data,
+            "raw_sources": self.raw_sources,
+            "capture_meta": self.capture_meta,
+        }
 
 
 class BaseCrawler(ABC):

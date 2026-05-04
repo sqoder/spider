@@ -49,12 +49,16 @@ class CrawlerFactory:
         if platform == "youtube":
             from app.core.config import get_settings
             settings = get_settings()
-            
-            # Use scraper if forced or if no API key is provided
-            if settings.youtube_use_scraper or not settings.youtube_api_key:
-                logger.info("Using YouTube native scraper mode (yt-dlp/Playwright).")
+
+            if not settings.youtube_api_key:
+                logger.info("Using yt-dlp YouTube crawler (no API key).")
                 from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
                 return YtdlpYouTubeCrawler()
+
+            if settings.youtube_use_scraper:
+                logger.info("Using YouTube visible-first scraper mode.")
+                from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+                return VisibleYouTubeCrawler()
 
         crawler_class = cls._registry[platform]
         logger.info(f"Creating crawler for platform: {platform}")
@@ -86,14 +90,19 @@ def register_all_crawlers() -> None:
         try:
             from app.core.config import get_settings
             settings = get_settings()
-            
-            if settings.youtube_api_key:
-                from app.crawlers.youtube.crawler import YouTubeCrawler
-                CrawlerFactory.register("youtube", YouTubeCrawler)
-            else:
+
+            if not settings.youtube_api_key:
                 from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
                 CrawlerFactory.register("youtube", YtdlpYouTubeCrawler)
-                logger.info("YouTube API Key not found. Using yt-dlp crawler fallback.")
+                logger.info("YouTube API Key not found. Using yt-dlp crawler.")
+            elif settings.youtube_use_scraper:
+                from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+                CrawlerFactory.register("youtube", VisibleYouTubeCrawler)
+                logger.info("API key available. Using YouTube visible-first scraper.")
+            else:
+                from app.crawlers.youtube.crawler import YouTubeCrawler
+                CrawlerFactory.register("youtube", YouTubeCrawler)
+                logger.info("Using YouTube API crawler.")
         except ImportError as e:
             logger.warning(f"YouTube crawler unavailable: {e}")
 
