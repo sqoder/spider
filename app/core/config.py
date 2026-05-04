@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     youtube_api_key: Optional[str] = None
     youtube_daily_quota: int = 10000
     youtube_use_scraper: bool = True  # Default to True for "native crawler" preference
+    youtube_cookies_file: Optional[str] = None
+    playwright_browser_count: int = 3
 
     # ---- Reddit ----
     reddit_client_id: Optional[str] = None

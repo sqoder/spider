@@ -39,6 +39,12 @@ class TestConfig:
         settings2 = Settings(app_env="development", _env_file=None)
         assert settings2.is_production is False
 
+    def test_youtube_crawler_settings(self):
+        settings = Settings(_env_file=None)
+        # Check default values for new settings
+        assert hasattr(settings, "youtube_cookies_file")
+        assert settings.playwright_browser_count == 3
+
 
 # ---- Exception Tests ----
 
