@@ -11,3 +11,8 @@ data/
 .vscode/
 *.log
 .DS_Store
+output/
+.coverage
+.env.sqlite
+youtube_cookies.txt
+.claude/
