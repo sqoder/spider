@@ -81,6 +81,21 @@ class TestCrawlResult:
         assert data["media"][0]["type"] == "video"
         assert data["media"][1]["type"] == "image"
 
+    def test_to_dict_preserves_visible_contract_metadata(self):
+        result = CrawlResult(
+            platform="youtube",
+            source_id="abc123",
+            visible_data={"title": "Visible title"},
+            raw_sources={"yt_initial_data": {"ok": True}},
+            capture_meta={"method": "visible_playwright"},
+        )
+
+        data = result.to_dict()
+
+        assert data["visible_data"]["title"] == "Visible title"
+        assert data["raw_sources"]["yt_initial_data"]["ok"] is True
+        assert data["capture_meta"]["method"] == "visible_playwright"
+
 
 class TestCommentResult:
     """Test the CommentResult dataclass."""
@@ -97,6 +112,22 @@ class TestCommentResult:
         assert comment.content == "Great video!"
         assert comment.like_count == 5
         assert comment.parent_comment_id is None
+
+    def test_to_dict_preserves_visible_contract_metadata(self):
+        comment = CommentResult(
+            platform="youtube",
+            source_id="comment001",
+            content="Visible comment",
+            visible_data={"content_text": "Visible comment", "thread_position": 1},
+            raw_sources={"innertube": {"commentId": "comment001"}},
+            capture_meta={"method": "innertube_comments"},
+        )
+
+        data = comment.to_dict()
+
+        assert data["visible_data"]["thread_position"] == 1
+        assert data["raw_sources"]["innertube"]["commentId"] == "comment001"
+        assert data["capture_meta"]["method"] == "innertube_comments"
 
 
 # ---- CrawlerFactory Tests ----
