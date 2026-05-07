@@ -83,23 +83,122 @@ else:
         return None
 
 
+async def _run_task_crawl(task, crawler):
+    """Run the actual crawl based on task type."""
+    results = []
+    comments_by_post = {}
+
+    if task.task_type == "search":
+        results = await crawler.search(task.keyword, limit=task.limit_count)
+
+    elif task.task_type == "user_posts":
+        results = await crawler.get_user_posts(task.username, limit=task.limit_count)
+
+    elif task.task_type in ("post_detail", "url_parse"):
+        result = await crawler.get_post_detail(task.url)
+        results = [result]
+        comments_limit = (task.params or {}).get("comments_limit", task.limit_count)
+        try:
+            comments_by_post[result.source_id] = await crawler.get_comments(
+                result.source_id, limit=comments_limit
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to fetch comments for {result.source_id}: {exc}")
+
+    elif task.task_type == "comments":
+        post_id_str = (task.params or {}).get("post_id", "")
+        comments = await crawler.get_comments(post_id_str, limit=task.limit_count)
+        comments_by_post["comments"] = comments
+
+    return results, comments_by_post
+
+
+async def _store_task_results(task, results, comments_by_post, comment_repo=None):
+    """Store the results of a crawl task."""
+    from app.storage.factory import StoreFactory
+    from app.schemas.comment import CommentCreate
+
+    # Special case for 'comments' task type with db_post_id
+    if task.task_type == "comments":
+        db_post_id = (task.params or {}).get("db_post_id")
+        comments = comments_by_post.get("comments", [])
+        if db_post_id and comment_repo:
+            for c in comments:
+                comment_data = CommentCreate(
+                    platform=c.platform,
+                    source_id=c.source_id,
+                    post_id=db_post_id,
+                    author_name=c.author_name,
+                    author_source_id=c.author_id,
+                    content=c.content,
+                    like_count=c.like_count,
+                    reply_count=c.reply_count,
+                    parent_comment_id=c.parent_comment_id,
+                    published_at=c.published_at,
+                    raw_data=c.raw,
+                    visible_data=c.visible_data,
+                    raw_sources=c.raw_sources,
+                    capture_meta=c.capture_meta,
+                )
+                await comment_repo.create_or_update(comment_data)
+        
+        # Also store via StoreFactory
+        store = StoreFactory.create_store(task.platform, task.task_type)
+        try:
+            post_id_str = (task.params or {}).get("post_id", "")
+            await store.store_comment(post_id_str, [c.to_dict() for c in comments])
+        finally:
+            await store.close()
+        return len(comments)
+
+    # General storage path
+    store = StoreFactory.create_store(task.platform, task.task_type)
+    try:
+        if results:
+            results_dicts = [r.to_dict() for r in results]
+            await store.store_content(results_dicts)
+
+            authors = [
+                r.to_dict().get("author") for r in results if r.to_dict().get("author")
+            ]
+            if authors:
+                await store.store_creator(authors)
+
+        for source_id, comments in comments_by_post.items():
+            if comments:
+                await store.store_comment(
+                    source_id, [c.to_dict() for c in comments]
+                )
+            elif results:
+                for r in results:
+                    if r.source_id == source_id and r.raw.get("comments"):
+                        await store.store_comment(r.source_id, r.raw["comments"])
+
+        # Trigger media downloads
+        if task.task_type in ("post_detail", "url_parse"):
+            for r in results:
+                try:
+                    from app.workers.crawler_worker import download_media
+                    if callable(getattr(download_media, "delay", None)):
+                        download_media.delay(task.platform, task.url, r.source_id)
+                except Exception as e:
+                    logger.error(f"Failed to queue media download for {r.source_id}: {e}")
+
+        return len(results)
+    finally:
+        await store.close()
+
+
 async def _execute_task_async(task_id: int):
     """Async implementation of crawl task execution."""
     from app.db.session import get_session_factory
-    from app.repositories.author_repo import AuthorRepository
     from app.repositories.comment_repo import CommentRepository
-    from app.repositories.post_repo import PostRepository
     from app.repositories.task_repo import TaskRepository
-    from app.schemas.author import AuthorCreate
-    from app.schemas.comment import CommentCreate
-    from app.schemas.post import PostCreate
     from app.storage.redis import redis_storage
 
     session_factory = get_session_factory()
     async with session_factory() as session:
         task_repo = TaskRepository(session)
-        post_repo = PostRepository(session)
-        author_repo = AuthorRepository(session)
         comment_repo = CommentRepository(session)
 
         task = await task_repo.get_by_id(task_id)
@@ -116,104 +215,14 @@ async def _execute_task_async(task_id: int):
         except Exception:
             pass
 
+        crawler = None
         try:
             crawler = CrawlerFactory.create(task.platform)
-            results = []
-            comments_by_post: dict[str, list] = {}
-
-            if task.task_type == "search":
-                results = await crawler.search(task.keyword, limit=task.limit_count)
-
-            elif task.task_type == "user_posts":
-                results = await crawler.get_user_posts(
-                    task.username, limit=task.limit_count
-                )
-
-            elif task.task_type in ("post_detail", "url_parse"):
-                result = await crawler.get_post_detail(task.url)
-                results = [result]
-                comments_limit = (task.params or {}).get(
-                    "comments_limit", task.limit_count
-                )
-                try:
-                    comments_by_post[result.source_id] = await crawler.get_comments(
-                        result.source_id, limit=comments_limit
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        f"Failed to fetch comments for {result.source_id}: {exc}"
-                    )
-
-            elif task.task_type == "comments":
-                post_id_str = (task.params or {}).get("post_id", "")
-                db_post_id = (task.params or {}).get("db_post_id")
-
-                comments = await crawler.get_comments(
-                    post_id_str, limit=task.limit_count
-                )
-
-                if db_post_id:
-                    for c in comments:
-                        comment_data = CommentCreate(
-                            platform=c.platform,
-                            source_id=c.source_id,
-                            post_id=db_post_id,
-                            author_name=c.author_name,
-                            author_source_id=c.author_id,
-                            content=c.content,
-                            like_count=c.like_count,
-                            reply_count=c.reply_count,
-                            parent_comment_id=c.parent_comment_id,
-                            published_at=c.published_at,
-                            raw_data=c.raw,
-                            visible_data=c.visible_data,
-                            raw_sources=c.raw_sources,
-                            capture_meta=c.capture_meta,
-                        )
-                        await comment_repo.create_or_update(comment_data)
-
-                await task_repo.mark_success(task_id, success_count=len(comments))
-                await crawler.close()
-                return
-
-            from app.storage.factory import StoreFactory
-            store = StoreFactory.create_store(task.platform, task.task_type)
-
-            try:
-                if task.task_type != "comments":
-                    results_dicts = [r.to_dict() for r in results]
-                    await store.store_content(results_dicts)
-
-                    authors = [r.to_dict().get("author") for r in results if r.to_dict().get("author")]
-                    if authors:
-                        await store.store_creator(authors)
-
-                if task.task_type == "comments":
-                    post_id_str = (task.params or {}).get("post_id", "")
-                    await store.store_comment(post_id_str, [c.to_dict() for c in results])
-                else:
-                    for r in results:
-                        if comments_by_post.get(r.source_id):
-                            await store.store_comment(
-                                r.source_id,
-                                [comment.to_dict() for comment in comments_by_post[r.source_id]],
-                            )
-                        elif r.raw.get("comments"):
-                            await store.store_comment(r.source_id, r.raw["comments"])
-
-                saved_count = len(results)
-                for r in results:
-                    if task.task_type in ("post_detail", "url_parse"):
-                        try:
-                            from app.workers.crawler_worker import download_media
-                            if callable(getattr(download_media, "delay", None)):
-                                download_media.delay(task.platform, task.url, r.source_id)
-                            else:
-                                logger.debug(f"Celery disabled — skipping async media download for {r.source_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to queue media download for {r.source_id}: {e}")
-            finally:
-                await store.close()
+            results, comments_by_post = await _run_task_crawl(task, crawler)
+            
+            saved_count = await _store_task_results(
+                task, results, comments_by_post, comment_repo
+            )
 
             await task_repo.mark_success(task_id, success_count=saved_count)
 
@@ -225,20 +234,20 @@ async def _execute_task_async(task_id: int):
                 pass
 
         except Exception as e:
+            logger.exception(f"Task {task_id} failed with error: {e}")
             await task_repo.mark_failed(task_id, error_message=str(e))
             raise
         finally:
+            if crawler:
+                await crawler.close()
+            
             try:
                 from app.db.session import close_db
                 await close_db()
             except Exception:
                 pass
-            try:
-                if 'crawler' in locals():
-                    await crawler.close()
-            except Exception:
-                pass
             logger.info(f"Task {task_id} execution finished")
+
 
 
 async def _update_task_failed(task_id: int, error: str):
