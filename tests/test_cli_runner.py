@@ -1,7 +1,10 @@
-import pytest
 import sys
 from unittest.mock import patch
+
+import pytest
+
 from run import main
+
 
 def test_search_args():
     test_args = [
@@ -28,6 +31,7 @@ def test_search_args():
         assert args.limit == 5
         assert args.download_media is True
 
+
 def test_detail_args():
     test_args = [
         "run.py",
@@ -51,6 +55,7 @@ def test_detail_args():
         assert args.url == "http://test.com"
         assert args.comments_limit == 10
         assert args.download_media is False
+
 
 def test_no_args_shows_help():
     test_args = ["run.py"]

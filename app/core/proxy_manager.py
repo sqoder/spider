@@ -3,7 +3,6 @@ Proxy manager for rotating proxies across requests.
 Supports a simple proxy URL or a pool of proxies.
 """
 
-
 from loguru import logger
 
 from app.core.config import get_settings

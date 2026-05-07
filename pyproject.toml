@@ -25,6 +25,10 @@ exclude = [
 select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "SIM"]
 ignore = [
   "E501",
+  "B008",     # FastAPI Depends in argument defaults
+  "ASYNC230", # Allow blocking open() for simple file storage
+  "ASYNC240", # Allow blocking pathlib methods
+  "ASYNC109", # Allow timeout parameter
 ]
 
 [tool.ruff.format]

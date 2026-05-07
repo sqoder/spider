@@ -2,7 +2,6 @@
 Crawler factory - creates platform-specific crawler instances.
 """
 
-
 from loguru import logger
 
 from app.core.exceptions import PlatformNotSupportedError

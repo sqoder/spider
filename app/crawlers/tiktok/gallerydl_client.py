@@ -93,8 +93,8 @@ class GalleryDLClient:
 
             return results
 
-        except TimeoutError:
-            raise CrawlError(self.platform, "extract_metadata", "Timed out (120s)")
+        except TimeoutError as e:
+            raise CrawlError(self.platform, "extract_metadata", "Timed out (120s)") from e
 
     async def download(
         self,
@@ -151,8 +151,8 @@ class GalleryDLClient:
             logger.info(f"Downloaded {len(downloaded)} files from {url}")
             return downloaded
 
-        except TimeoutError:
-            raise MediaDownloadError(url, "Download timed out (10 min limit)")
+        except TimeoutError as e:
+            raise MediaDownloadError(url, "Download timed out (10 min limit)") from e
 
     async def get_user_content(self, username: str, limit: int = 20) -> list[dict[str, Any]]:
         """

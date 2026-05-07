@@ -2,7 +2,6 @@
 Tests for core modules: config, rate limiter, exceptions.
 """
 
-
 import pytest
 
 from app.core.config import Settings, get_settings

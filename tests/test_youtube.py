@@ -2,7 +2,6 @@
 Tests for YouTube crawler URL parsing and data transformation.
 """
 
-
 import pytest
 
 from app.crawlers.youtube.crawler import YouTubeCrawler

@@ -33,7 +33,6 @@ class VisualService:
 
         try:
             import jieba
-            import matplotlib.pyplot as plt
             from wordcloud import WordCloud
         except ImportError:
             logger.warning(
