@@ -20,7 +20,7 @@ async def test_innertube_extraction():
     </html>
     """
     
-    with patch.object(client.client, 'get', return_value=MagicMock(text=mock_html)):
+    with patch.object(client.fetcher, 'get', return_value=MagicMock(text=mock_html)):
         # Verify initial data extraction logic
         yt_data = await client._get_initial_data("test_id")
         assert client.api_key == "test_key"
@@ -28,6 +28,12 @@ async def test_innertube_extraction():
         token = client._extract_initial_continuation(yt_data)
         assert token == "test_token"
     await client.close()
+
+def test_extract_json_from_ytcfg_context():
+    client = InnertubeClient()
+    html = 'ytcfg.set({"INNERTUBE_API_KEY":"test_key","INNERTUBE_CONTEXT":{"client":{"clientName":"WEB"}}});'
+    context = client._extract_json(html, r'["\']INNERTUBE_CONTEXT["\']\s*:\s*\{')
+    assert context == {"client": {"clientName": "WEB"}}
 
 @pytest.mark.asyncio
 async def test_parse_comment_data():
