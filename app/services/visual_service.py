@@ -5,7 +5,6 @@ Generates word clouds and other visualizations from crawled data.
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -17,7 +16,7 @@ class VisualService:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_word_cloud(self, text: str, output_filename: str) -> Optional[Path]:
+    def generate_word_cloud(self, text: str, output_filename: str) -> Path | None:
         """
         Generate a word cloud from text.
 
@@ -34,8 +33,8 @@ class VisualService:
 
         try:
             import jieba
-            from wordcloud import WordCloud
             import matplotlib.pyplot as plt
+            from wordcloud import WordCloud
         except ImportError:
             logger.warning(
                 "wordcloud/matplotlib/jieba not installed. Skipping word cloud generation."
@@ -71,7 +70,7 @@ class VisualService:
             logger.error(f"Failed to generate word cloud: {e}")
             return None
 
-    def _find_font(self) -> Optional[str]:
+    def _find_font(self) -> str | None:
         """Try to find a suitable font path for word cloud (supporting Chinese)."""
         # Common locations for fonts on different systems
         paths = [

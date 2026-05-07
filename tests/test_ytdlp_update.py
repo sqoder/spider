@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
 from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
 
@@ -137,7 +139,7 @@ async def test_ytdlp_crawler_comments_uses_cached_visible_helper():
             "app.crawlers.youtube.visible_crawler.VisibleYouTubeCrawler.get_comments",
             new_callable=AsyncMock,
             return_value=comments,
-        ) as mock_get_comments,
+        ),
         patch(
             "app.crawlers.youtube.visible_crawler.VisibleYouTubeCrawler.__init__",
             return_value=None,

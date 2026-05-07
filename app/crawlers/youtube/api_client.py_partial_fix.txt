@@ -1,0 +1,32 @@
+        for attempt in range(retry_count + 1):
+            proxy_url = self._proxy_manager.get_proxy() if self._proxy_manager else None
+
+            try:
+
+                def _do_fetch(proxy_url=proxy_url):
+                    # For simplicity and thread-safety in executor, we use a local fetcher or configure proxy
+                    f = self._fetcher
+                    if proxy_url:
+                        f = Fetcher(
+                            proxy=proxy_url, timeout=30000, headers={"Accept": "application/json"}
+                        )
+                    return f.get(url, params=params)
+
+                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+
+                if response.status_code != 200:
+                    logger.warning(
+                        f"YouTube API error: {response.status_code} {response.text} (attempt {attempt + 1})"
+                    )
+                    continue
+
+                return response.json()
+
+            except Exception as e:
+                if attempt < retry_count:
+                    logger.warning(f"YouTube API request failed: {e}. Retrying...")
+                    continue
+                logger.error(f"YouTube API error after {retry_count} retries: {e}")
+                raise CrawlError("youtube", endpoint, str(e)) from e
+
+        raise CrawlError("youtube", endpoint, "_request exited retry loop without result")

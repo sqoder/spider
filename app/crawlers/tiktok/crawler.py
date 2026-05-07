@@ -4,9 +4,8 @@ Uses gallery-dl for metadata and yt-dlp for video downloads.
 First phase: user videos, single video detail, video download, basic metadata.
 """
 
-import re
-from datetime import datetime, timezone
-from typing import Optional
+import contextlib
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -126,7 +125,7 @@ class TikTokCrawler(BaseCrawler):
 
     # ---- Private helpers ----
 
-    def _parse_playwright_item(self, data: dict) -> Optional[CrawlResult]:
+    def _parse_playwright_item(self, data: dict) -> CrawlResult | None:
         if not data:
             return None
 
@@ -146,10 +145,8 @@ class TikTokCrawler(BaseCrawler):
         published_at = None
         create_time = data.get("createTime")
         if create_time:
-            try:
-                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
-            except (ValueError, TypeError):
-                pass
+            with contextlib.suppress(ValueError, TypeError):
+                published_at = datetime.fromtimestamp(int(create_time), tz=UTC)
 
         return CrawlResult(
             platform="tiktok",
@@ -178,7 +175,7 @@ class TikTokCrawler(BaseCrawler):
             raw=data,
         )
 
-    def _parse_playwright_comment(self, data: dict, post_id: str) -> Optional[CommentResult]:
+    def _parse_playwright_comment(self, data: dict, post_id: str) -> CommentResult | None:
         if not data:
             return None
 
@@ -191,10 +188,8 @@ class TikTokCrawler(BaseCrawler):
         published_at = None
         create_time = data.get("create_time")
         if create_time:
-            try:
-                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
-            except (ValueError, TypeError):
-                pass
+            with contextlib.suppress(ValueError, TypeError):
+                published_at = datetime.fromtimestamp(int(create_time), tz=UTC)
 
         return CommentResult(
             platform="tiktok",
@@ -216,7 +211,7 @@ class TikTokCrawler(BaseCrawler):
             raw=data,
         )
 
-    def _parse_tiktok_item(self, data: dict) -> Optional[CrawlResult]:
+    def _parse_tiktok_item(self, data: dict) -> CrawlResult | None:
         """Parse gallery-dl TikTok metadata into a CrawlResult."""
         if not data:
             return None
@@ -250,10 +245,8 @@ class TikTokCrawler(BaseCrawler):
         published_at = None
         create_time = data.get("createTime", data.get("create_time"))
         if create_time:
-            try:
-                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
-            except (ValueError, TypeError):
-                pass
+            with contextlib.suppress(ValueError, TypeError):
+                published_at = datetime.fromtimestamp(int(create_time), tz=UTC)
 
         return CrawlResult(
             platform="tiktok",
@@ -283,10 +276,8 @@ class TikTokCrawler(BaseCrawler):
         published_at = None
         ts = info.get("timestamp")
         if ts:
-            try:
-                published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
-            except (ValueError, TypeError):
-                pass
+            with contextlib.suppress(ValueError, TypeError):
+                published_at = datetime.fromtimestamp(ts, tz=UTC)
 
         return CrawlResult(
             platform="tiktok",

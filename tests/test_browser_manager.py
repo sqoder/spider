@@ -1,7 +1,8 @@
 # tests/test_browser_manager.py
 import pytest
-from app.core.config import get_settings
+
 from app.core.browser_manager import BrowserManager, browser_manager
+from app.core.config import get_settings
 
 
 class FakeFetcher:

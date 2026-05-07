@@ -5,11 +5,9 @@ Uses YouTube Data API for structured data and yt-dlp for media downloads.
 
 import re
 from datetime import datetime
-from typing import Optional
 
 from loguru import logger
 
-from app.core.config import get_settings
 from app.core.exceptions import QuotaExhaustedError
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.api_client import YouTubeAPIClient
@@ -373,7 +371,7 @@ class YouTubeCrawler(BaseCrawler):
         raise ValueError(f"Cannot extract video ID from URL: {url}")
 
     @staticmethod
-    def _parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+    def _parse_datetime(dt_str: str | None) -> datetime | None:
         """Parse various datetime formats from YouTube."""
         if not dt_str:
             return None

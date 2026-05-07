@@ -2,7 +2,6 @@
 Tests for YouTube crawler URL parsing and data transformation.
 """
 
-from datetime import datetime
 
 import pytest
 

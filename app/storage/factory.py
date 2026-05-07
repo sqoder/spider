@@ -2,11 +2,10 @@
 Store factory to create storage implementations based on configuration.
 """
 
-from typing import Type
 from app.core.config import get_settings
 from app.storage.base_store import BaseStore
-from app.storage.file_store_impl import FileStoreImplement
 from app.storage.db_store_impl import DbStoreImplement
+from app.storage.file_store_impl import FileStoreImplement
 
 
 class StoreFactory:

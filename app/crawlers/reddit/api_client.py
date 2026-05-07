@@ -4,15 +4,15 @@ If REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET are missing, it automatically switche
 No-API mode, appending `.json` to public paths and utilizing browser-like headers.
 """
 
-import time
 import asyncio
-from typing import Any, Optional
+import time
+from typing import Any
 
-from scrapling import Fetcher
 from loguru import logger
+from scrapling import Fetcher
 
 from app.core.config import get_settings
-from app.core.exceptions import RateLimitExceededError, CrawlError
+from app.core.exceptions import CrawlError, RateLimitExceededError
 
 
 class RedditAPIClient:
@@ -48,7 +48,7 @@ class RedditAPIClient:
                 "[Reddit] No credentials found. Automatically falling back to Public Scraper (.json) mode!"
             )
 
-        self._access_token: Optional[str] = None
+        self._access_token: str | None = None
         self._token_expires_at: float = 0
 
         # Rate limit tracking
@@ -93,9 +93,8 @@ class RedditAPIClient:
             logger.error(f"[Reddit] Authentication error: {e}")
 
     async def _ensure_auth(self) -> None:
-        if self.use_oauth:
-            if not self._access_token or time.time() >= self._token_expires_at:
-                await self._authenticate()
+        if self.use_oauth and (not self._access_token or time.time() >= self._token_expires_at):
+            await self._authenticate()
 
     def _update_rate_limits(self, response) -> None:
         remaining = response.headers.get("X-Ratelimit-Remaining")
@@ -106,7 +105,7 @@ class RedditAPIClient:
         if reset is not None:
             self._rate_limit_reset = time.time() + float(reset)
 
-    async def _request(self, method: str, endpoint: str, params: Optional[dict] = None) -> Any:
+    async def _request(self, method: str, endpoint: str, params: dict | None = None) -> Any:
         """Make an API request using Scrapling Fetcher."""
         await self._ensure_auth()
 
@@ -180,7 +179,7 @@ class RedditAPIClient:
                     await asyncio.sleep(2**attempt)
                     continue
                 logger.error(f"[Reddit] Request error: {e}")
-                raise CrawlError("reddit", endpoint, str(e))
+                raise CrawlError("reddit", endpoint, str(e)) from e
 
     async def aclose(self):
         # Scrapling Fetcher doesn't have an explicit aclose usually,
@@ -192,11 +191,11 @@ class RedditAPIClient:
     async def search(
         self,
         query: str,
-        subreddit: Optional[str] = None,
+        subreddit: str | None = None,
         sort: str = "relevance",
         time_filter: str = "all",
         limit: int = 25,
-        after: Optional[str] = None,
+        after: str | None = None,
     ) -> dict:
         endpoint = f"/r/{subreddit}/search" if subreddit else "/search"
         params: dict = {
@@ -219,7 +218,7 @@ class RedditAPIClient:
         subreddit: str,
         sort: str = "hot",
         limit: int = 25,
-        after: Optional[str] = None,
+        after: str | None = None,
     ) -> dict:
         params: dict = {"limit": min(limit, 100), "raw_json": 1}
         if after:
@@ -296,7 +295,7 @@ class RedditAPIClient:
         username: str,
         sort: str = "new",
         limit: int = 25,
-        after: Optional[str] = None,
+        after: str | None = None,
     ) -> dict:
         params: dict = {
             "sort": sort,
@@ -313,7 +312,7 @@ class RedditAPIClient:
         username: str,
         sort: str = "new",
         limit: int = 25,
-        after: Optional[str] = None,
+        after: str | None = None,
     ) -> dict:
         params: dict = {
             "sort": sort,
@@ -342,6 +341,3 @@ class RedditAPIClient:
     @property
     def rate_limit_remaining(self) -> float:
         return self._rate_limit_remaining
-
-    async def close(self) -> None:
-        await self._client.aclose()

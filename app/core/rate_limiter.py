@@ -6,7 +6,6 @@ Falls back to in-memory limiting when Redis is unavailable.
 import asyncio
 import time
 from collections import defaultdict
-from typing import Optional
 
 from loguru import logger
 
@@ -75,7 +74,7 @@ class RateLimiter:
             bucket["tokens"] = max(0, bucket["tokens"] - cost)
             return True
 
-    def get_remaining(self, platform: str) -> Optional[int]:
+    def get_remaining(self, platform: str) -> int | None:
         """Get remaining tokens for a platform."""
         if platform not in self._buckets:
             return None

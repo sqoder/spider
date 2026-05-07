@@ -1,17 +1,21 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from app.workers.crawler_worker import _execute_task_async
 
 
 @pytest.mark.asyncio
 async def test_execute_task_async_not_found():
-    with patch("app.repositories.task_repo.TaskRepository.get_by_id", return_value=None):
-        with patch("app.db.session.get_session_factory") as mock_session_factory:
-            mock_session = AsyncMock()
-            mock_session_factory.return_value.return_value.__aenter__.return_value = mock_session
+    with (
+        patch("app.repositories.task_repo.TaskRepository.get_by_id", return_value=None),
+        patch("app.db.session.get_session_factory") as mock_session_factory,
+    ):
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.return_value.__aenter__.return_value = mock_session
 
-            # Should return early without crashing
-            await _execute_task_async(999)
+        # Should return early without crashing
+        await _execute_task_async(999)
 
 
 @pytest.mark.asyncio

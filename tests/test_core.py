@@ -2,7 +2,6 @@
 Tests for core modules: config, rate limiter, exceptions.
 """
 
-import asyncio
 
 import pytest
 

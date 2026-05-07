@@ -3,7 +3,7 @@ Pytest configuration and shared fixtures.
 """
 
 import os
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 from app.db.base import Base
-from app.db.session import get_engine, get_session_factory
+from app.db.session import get_engine
 from app.main import app
 
 

@@ -3,7 +3,7 @@ Async database session management.
 Provides engine, session factory, and FastAPI dependency.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

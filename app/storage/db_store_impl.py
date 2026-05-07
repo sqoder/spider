@@ -3,18 +3,18 @@ Database-based store implementation (PostgreSQL, SQLite).
 Uses existing repositories to ensure deduplication and consistency.
 """
 
-from typing import List, Optional
+
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.storage.base_store import BaseStore
 from app.db.session import get_session_factory
-from app.repositories.post_repo import PostRepository
-from app.repositories.comment_repo import CommentRepository
 from app.repositories.author_repo import AuthorRepository
-from app.schemas.post import PostCreate
-from app.schemas.comment import CommentCreate
+from app.repositories.comment_repo import CommentRepository
+from app.repositories.post_repo import PostRepository
 from app.schemas.author import AuthorCreate
+from app.schemas.comment import CommentCreate
+from app.schemas.post import PostCreate
+from app.storage.base_store import BaseStore
 
 
 class DbStoreImplement(BaseStore):
@@ -23,14 +23,14 @@ class DbStoreImplement(BaseStore):
     def __init__(self, platform: str, crawler_type: str):
         super().__init__(platform, crawler_type)
         self.session_factory = get_session_factory()
-        self._session: Optional[AsyncSession] = None
+        self._session: AsyncSession | None = None
 
     async def _get_session(self) -> AsyncSession:
         if self._session is None:
             self._session = self.session_factory()
         return self._session
 
-    async def store_content(self, items: List[dict]):
+    async def store_content(self, items: list[dict]):
         session = await self._get_session()
         post_repo = PostRepository(session)
         author_repo = AuthorRepository(session)
@@ -83,7 +83,7 @@ class DbStoreImplement(BaseStore):
 
         await session.commit()
 
-    async def store_comment(self, post_id: str, items: List[dict]):
+    async def store_comment(self, post_id: str, items: list[dict]):
         session = await self._get_session()
         comment_repo = CommentRepository(session)
         post_repo = PostRepository(session)
@@ -118,7 +118,7 @@ class DbStoreImplement(BaseStore):
 
         await session.commit()
 
-    async def store_creator(self, items: List[dict]):
+    async def store_creator(self, items: list[dict]):
         session = await self._get_session()
         author_repo = AuthorRepository(session)
 

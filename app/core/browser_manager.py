@@ -1,9 +1,10 @@
 # app/core/browser_manager.py
 import asyncio
 import os
-from typing import Optional, List, Dict, Tuple, Any
-from scrapling import StealthyFetcher
+from typing import Any, Optional
+
 from loguru import logger
+from scrapling import StealthyFetcher
 
 from app.core.config import get_settings
 
@@ -18,10 +19,10 @@ class BrowserManager:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(BrowserManager, cls).__new__(cls)
-            cls._instance._fetchers: List[StealthyFetcher] = []
-            cls._instance._cookie_cache: Dict[str, Tuple[float, List[Dict]]] = {}
-            cls._instance._semaphore: Optional[asyncio.Semaphore] = None
+            cls._instance = super().__new__(cls)
+            cls._instance._fetchers: list[StealthyFetcher] = []
+            cls._instance._cookie_cache: dict[str, tuple[float, list[dict]]] = {}
+            cls._instance._semaphore: asyncio.Semaphore | None = None
         return cls._instance
 
     def _get_semaphore(self) -> asyncio.Semaphore:
@@ -31,7 +32,7 @@ class BrowserManager:
             self._semaphore = asyncio.Semaphore(limit)
         return self._semaphore
 
-    def _parse_cookies_file(self, filepath: str) -> List[Dict]:
+    def _parse_cookies_file(self, filepath: str) -> list[dict]:
         """Parse Netscape format cookies file into Scrapling/Playwright format."""
         current_mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0
         if current_mtime:
@@ -44,7 +45,7 @@ class BrowserManager:
             return cookies
 
         try:
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 for line in f:
                     if not line.strip() or line.startswith("#"):
                         continue
@@ -67,7 +68,7 @@ class BrowserManager:
             logger.error(f"Failed to parse cookies file: {e}")
         return cookies
 
-    async def new_fetcher(self, cookies_file: Optional[str] = None, **kwargs) -> StealthyFetcher:
+    async def new_fetcher(self, cookies_file: str | None = None, **kwargs) -> StealthyFetcher:
         """
         Creates a new StealthyFetcher instance.
         In Scrapling, a Fetcher instance manages its own browser context/page.
@@ -143,7 +144,7 @@ class BrowserManager:
 
 
 # Compatibility alias for existing code expecting new_page
-async def new_page_deprecated(cookies_file: Optional[str] = None, **kwargs):
+async def new_page_deprecated(cookies_file: str | None = None, **kwargs):
     logger.warning("new_page is deprecated, use new_fetcher instead.")
     return await browser_manager.new_fetcher(cookies_file, **kwargs)
 

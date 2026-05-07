@@ -2,7 +2,7 @@
 CrawlTask repository — CRUD operations for the crawl_tasks table.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +53,7 @@ class TaskRepository:
         if not task:
             return None
         task.status = "running"
-        task.started_at = datetime.now(timezone.utc)
+        task.started_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(task)
         return task
@@ -64,7 +64,7 @@ class TaskRepository:
             return None
         task.status = "success"
         task.success_count = success_count
-        task.finished_at = datetime.now(timezone.utc)
+        task.finished_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(task)
         return task
@@ -78,7 +78,7 @@ class TaskRepository:
         task.status = "failed"
         task.error_message = error_message
         task.failed_count = failed_count
-        task.finished_at = datetime.now(timezone.utc)
+        task.finished_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(task)
         return task
@@ -97,7 +97,7 @@ class TaskRepository:
         task.success_count = success_count
         task.failed_count = failed_count
         task.error_message = error_message
-        task.finished_at = datetime.now(timezone.utc)
+        task.finished_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(task)
         return task

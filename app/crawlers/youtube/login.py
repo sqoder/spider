@@ -4,13 +4,14 @@ Launches a browser for manual login and saves the session state.
 """
 
 import asyncio
-import os
 import time
 from pathlib import Path
-from playwright.async_api import async_playwright
+
 from loguru import logger
-from app.core.proxy_manager import proxy_manager
+from playwright.async_api import async_playwright
+
 from app.core.config import get_settings
+from app.core.proxy_manager import proxy_manager
 
 
 async def save_cookies_as_netscape(context, filepath):

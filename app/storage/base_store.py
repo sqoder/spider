@@ -3,7 +3,6 @@ Base store interface for all storage implementations.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
 
 
 class BaseStore(ABC):
@@ -17,17 +16,17 @@ class BaseStore(ABC):
         self.crawler_type = crawler_type
 
     @abstractmethod
-    async def store_content(self, items: List[dict]):
+    async def store_content(self, items: list[dict]):
         """Store post/video/note content."""
         pass
 
     @abstractmethod
-    async def store_comment(self, post_id: str, items: List[dict]):
+    async def store_comment(self, post_id: str, items: list[dict]):
         """Store comments for a specific post."""
         pass
 
     @abstractmethod
-    async def store_creator(self, items: List[dict]):
+    async def store_creator(self, items: list[dict]):
         """Store author/creator information."""
         pass
 

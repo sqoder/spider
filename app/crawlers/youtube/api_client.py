@@ -5,11 +5,9 @@ Includes quota tracking to stay within daily limits.
 """
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Any, Optional
 
-from scrapling import Fetcher
 from loguru import logger
+from scrapling import Fetcher
 
 from app.core.config import get_settings
 from app.core.exceptions import APIKeyMissingError, CrawlError, QuotaExhaustedError
@@ -70,15 +68,13 @@ class YouTubeAPIClient:
 
             try:
 
-                def _do_fetch():
-                    # If proxy is needed, we might need a fresh fetcher or use session
+                def _do_fetch(proxy_url=proxy_url):
                     # For simplicity and thread-safety in executor, we use a local fetcher or configure proxy
                     f = self._fetcher
                     if proxy_url:
                         f = Fetcher(
                             proxy=proxy_url, timeout=30000, headers={"Accept": "application/json"}
                         )
-
                     return f.get(url, params=params)
 
                 response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
@@ -102,7 +98,7 @@ class YouTubeAPIClient:
                     await asyncio.sleep(2**attempt)
                     continue
                 logger.error(f"YouTube API error after {retry_count} retries: {e}")
-                raise CrawlError("youtube", endpoint, str(e))
+                raise CrawlError("youtube", endpoint, str(e)) from e
 
         raise CrawlError("youtube", endpoint, "_request exited retry loop without result")
 
@@ -111,8 +107,8 @@ class YouTubeAPIClient:
         query: str,
         max_results: int = 20,
         order: str = "relevance",
-        published_after: Optional[str] = None,
-        page_token: Optional[str] = None,
+        published_after: str | None = None,
+        page_token: str | None = None,
     ) -> dict:
         """
         Search for videos.
@@ -158,7 +154,7 @@ class YouTubeAPIClient:
         return await self._request("videos", params)
 
     async def get_channel_info(
-        self, channel_id: Optional[str] = None, username: Optional[str] = None
+        self, channel_id: str | None = None, username: str | None = None
     ) -> dict:
         """
         Get channel information.
@@ -184,7 +180,7 @@ class YouTubeAPIClient:
         self,
         channel_id: str,
         max_results: int = 20,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> dict:
         """Search for videos from a specific channel."""
         params = {
@@ -204,7 +200,7 @@ class YouTubeAPIClient:
         video_id: str,
         max_results: int = 50,
         order: str = "relevance",
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> dict:
         """
         Get top-level comment threads for a video.
@@ -234,7 +230,7 @@ class YouTubeAPIClient:
         self,
         parent_id: str,
         max_results: int = 100,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> dict:
         """
         Get all replies for a specific comment thread.

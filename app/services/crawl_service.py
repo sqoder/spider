@@ -1,14 +1,13 @@
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from loguru import logger
 
 from app.crawlers.base import BaseCrawler
 from app.crawlers.factory import CrawlerFactory
+from app.services.media_service import MediaService
 from app.storage.base_store import BaseStore
 from app.storage.factory import StoreFactory
-from app.services.media_service import MediaService
-
 
 CrawlerFactoryFn = Callable[[str], BaseCrawler]
 StoreFactoryFn = Callable[[str, str], BaseStore]

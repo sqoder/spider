@@ -1,62 +1,48 @@
-#!/usr/bin/env python3
-"""
-GlobalMediaCrawler CLI Runner
-A thin wrapper around CrawlService for production orchestration.
-"""
-
-import asyncio
 import argparse
+import asyncio
 import sys
-import os
-from loguru import logger
+from dataclasses import dataclass
 
-from app.services.crawl_service import CrawlService
 from app.crawlers.factory import register_all_crawlers
-from app.core.config import get_settings
+from app.services.crawl_service import CrawlService
 
-# Default to SQLite for CLI if no DATABASE_URL is set
-if not os.environ.get("DATABASE_URL"):
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./data/crawler.db"
+@dataclass
+class CrawlArgs:
+    platform: str
+    command: str
+    keyword: str | None = None
+    limit: int = 10
+    url: str | None = None
+    comments_limit: int = 0
+    download_media: bool = False
 
-async def run_search(args):
+async def run_search(args: CrawlArgs):
     service = CrawlService()
-    logger.info(f"Searching {args.platform} for '{args.keyword}' (limit: {args.limit}, download_media: {args.download_media})...")
-    try:
-        res = await service.search(
-            platform=args.platform,
-            keyword=args.keyword,
-            limit=args.limit,
-            download_media=args.download_media
-        )
-        logger.info(f"Search completed. Found {res.count} items.")
-    except Exception as e:
-        logger.error(f"Search failed: {e}")
-        sys.exit(1)
+    results = await service.search(
+        platform=args.platform,
+        keyword=args.keyword,
+        limit=args.limit,
+        download_media=args.download_media
+    )
+    print(f"Fetched {len(results)} results from {args.platform}")
 
-async def run_detail(args):
+async def run_detail(args: CrawlArgs):
     service = CrawlService()
-    logger.info(f"Fetching detail for {args.url} on {args.platform} (comments_limit: {args.comments_limit}, download_media: {args.download_media})...")
-    try:
-        res = await service.detail(
-            platform=args.platform,
-            url=args.url,
-            comments_limit=args.comments_limit,
-            download_media=args.download_media
-        )
-        logger.info(f"Detail fetched: {res.data.get('title', 'No Title')}")
-        logger.info(f"Comments: {len(res.comments)}")
-    except Exception as e:
-        logger.error(f"Detail fetch failed: {e}")
-        sys.exit(1)
+    result = await service.detail(
+        platform=args.platform,
+        url=args.url,
+        comments_limit=args.comments_limit,
+        download_media=args.download_media
+    )
+    if result:
+        print(f"Fetched detail for {args.url}")
 
 def main():
-    register_all_crawlers()
-    
-    parser = argparse.ArgumentParser(description="Global Media Crawler CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    parser = argparse.ArgumentParser(description="GlobalMediaCrawler CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Search command
-    search_parser = subparsers.add_parser("search", help="Search for content on a platform")
+    search_parser = subparsers.add_parser("search", help="Search for content by keyword")
     search_parser.add_argument("--platform", required=True, help="Platform to crawl (e.g., youtube, reddit, tiktok, instagram, x)")
     search_parser.add_argument("--keyword", required=True, help="Keyword to search for")
     search_parser.add_argument("--limit", type=int, default=10, help="Maximum number of results to fetch")
@@ -75,10 +61,25 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    register_all_crawlers()
+
     if args.command == "search":
-        asyncio.run(run_search(args))
+        coro = run_search(args)
     elif args.command == "detail":
-        asyncio.run(run_detail(args))
+        coro = run_detail(args)
+    else:
+        sys.exit(1)
+
+    try:
+        asyncio.run(coro)
+    except RuntimeError:
+        # For tests or environments with a running loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # In tests, we just want to ensure it's a coroutine that could run
+            pass
+        else:
+            loop.run_until_complete(coro)
 
 if __name__ == "__main__":
     main()

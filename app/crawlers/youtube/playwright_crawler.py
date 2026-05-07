@@ -4,21 +4,16 @@ Mimics MediaCrawler by using direct web scraping (Playwright) to bypass API Key 
 """
 
 import asyncio
-import json
-import re
-import time
 from datetime import datetime
-from typing import Optional
 from urllib.parse import quote_plus
 
 from loguru import logger
-from playwright.async_api import Page
 from scrapling import StealthyFetcher
 
 from app.core.browser_manager import browser_manager
+from app.core.config import get_settings
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.innertube_client import InnertubeClient
-from app.core.config import get_settings
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
 
@@ -401,12 +396,12 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                     await page.wait_for_selector(selector, timeout=15000)
                     found = True
                     break
-                except:
+                except Exception:
                     continue
 
             if not found:
                 logger.warning(
-                    f"[Playwright] Could not find comment section via selectors. Forcing scroll."
+                    "[Playwright] Could not find comment section via selectors. Forcing scroll."
                 )
                 for _ in range(3):
                     await page.keyboard.press("PageDown")
@@ -451,7 +446,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                                 published_at=datetime.now(),
                             )
                         )
-                except:
+                except Exception:
                     continue
 
                 if len(results) >= limit:

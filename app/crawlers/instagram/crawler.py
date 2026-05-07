@@ -4,13 +4,12 @@ Uses native web endpoints for public profiles and single posts to bypass login.
 """
 
 import asyncio
-from datetime import datetime, timezone
 import json
 import re
-from typing import Optional
+from datetime import UTC, datetime
 
-from scrapling import Fetcher
 from loguru import logger
+from scrapling import Fetcher
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 
@@ -145,7 +144,7 @@ class InstagramCrawler(BaseCrawler):
 
     # ---- Private helpers ----
 
-    def _parse_instagram_item(self, data: dict) -> Optional[CrawlResult]:
+    def _parse_instagram_item(self, data: dict) -> CrawlResult | None:
         """Parse Instagram metadata into a CrawlResult."""
         if not data:
             return None
@@ -185,7 +184,7 @@ class InstagramCrawler(BaseCrawler):
         if timestamp:
             try:
                 if isinstance(timestamp, (int, float)):
-                    published_at = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                    published_at = datetime.fromtimestamp(timestamp, tz=UTC)
             except (ValueError, TypeError):
                 pass
 

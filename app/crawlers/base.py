@@ -6,7 +6,7 @@ All platform-specific crawlers must inherit from BaseCrawler and implement its m
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -19,17 +19,17 @@ class CrawlResult:
 
     platform: str
     source_id: str
-    url: Optional[str] = None
-    title: Optional[str] = None
-    content: Optional[str] = None
-    content_type: Optional[str] = None  # video, image, text, reel, etc.
+    url: str | None = None
+    title: str | None = None
+    content: str | None = None
+    content_type: str | None = None  # video, image, text, reel, etc.
 
     # Author info
-    author_id: Optional[str] = None
-    author_name: Optional[str] = None
-    author_username: Optional[str] = None
-    author_url: Optional[str] = None
-    author_avatar: Optional[str] = None
+    author_id: str | None = None
+    author_name: str | None = None
+    author_username: str | None = None
+    author_url: str | None = None
+    author_avatar: str | None = None
 
     # Metrics
     like_count: int = 0
@@ -39,14 +39,14 @@ class CrawlResult:
 
     # Media
     media: list[dict] = field(default_factory=list)
-    thumbnail_url: Optional[str] = None
+    thumbnail_url: str | None = None
 
     # Extra Metadata
     tags: list[str] = field(default_factory=list)
     subtitles: list[dict] = field(default_factory=list)
 
     # Timestamps
-    published_at: Optional[datetime] = None
+    published_at: datetime | None = None
 
     # Raw API response
     raw: dict[str, Any] = field(default_factory=dict)
@@ -93,14 +93,14 @@ class CommentResult:
 
     platform: str
     source_id: str
-    content: Optional[str] = None
-    author_name: Optional[str] = None
-    author_username: Optional[str] = None
-    author_id: Optional[str] = None
+    content: str | None = None
+    author_name: str | None = None
+    author_username: str | None = None
+    author_id: str | None = None
     like_count: int = 0
     reply_count: int = 0
-    parent_comment_id: Optional[str] = None
-    published_at: Optional[datetime] = None
+    parent_comment_id: str | None = None
+    published_at: datetime | None = None
     raw: dict[str, Any] = field(default_factory=dict)
     visible_data: dict[str, Any] = field(default_factory=dict)
     raw_sources: dict[str, Any] = field(default_factory=dict)
@@ -205,7 +205,7 @@ class BaseCrawler(ABC):
 
     async def close(self) -> None:
         """Cleanup resources. Override in subclasses if needed."""
-        pass
+        logger.debug(f"Closing {self.platform} crawler")
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(platform={self.platform})>"

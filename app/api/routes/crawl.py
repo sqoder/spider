@@ -5,8 +5,8 @@ No Redis, no Celery, no DB — just CrawlerFactory + StoreFactory.
 
 from fastapi import APIRouter
 
+from app.schemas.crawl import DetailRequest, SearchRequest
 from app.services.crawl_service import CrawlService
-from app.schemas.crawl import SearchRequest, DetailRequest
 
 router = APIRouter(prefix="/crawl", tags=["Crawl"])
 

@@ -1,7 +1,8 @@
-from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
 
 
 def test_search_video_renderer_structures_visible_card_fields():

@@ -4,7 +4,7 @@ In simple_mode, Celery is disabled and tasks are not registered.
 """
 
 import asyncio
-from typing import Optional
+import contextlib
 
 from loguru import logger
 
@@ -56,7 +56,7 @@ if celery_app is not None:
         except Exception as e:
             logger.error(f"Crawl task {task_id} failed: {e}")
             _run_async(_update_task_failed(task_id, str(e)))
-            raise self.retry(exc=e)
+            raise self.retry(exc=e) from e
 
     @celery_app.task(
         name="app.workers.crawler_worker.download_media",
@@ -116,8 +116,8 @@ async def _run_task_crawl(task, crawler):
 
 async def _store_task_results(task, results, comments_by_post, comment_repo=None):
     """Store the results of a crawl task."""
-    from app.storage.factory import StoreFactory
     from app.schemas.comment import CommentCreate
+    from app.storage.factory import StoreFactory
 
     # Special case for 'comments' task type with db_post_id
     if task.task_type == "comments":
@@ -206,12 +206,10 @@ async def _execute_task_async(task_id: int):
 
         await task_repo.mark_running(task_id)
 
-        try:
+        with contextlib.suppress(Exception):
             await redis_storage.set_task_progress(
                 task_id, {"status": "running", "items_crawled": 0}
             )
-        except Exception:
-            pass
 
         crawler = None
         try:
@@ -222,12 +220,10 @@ async def _execute_task_async(task_id: int):
 
             await task_repo.mark_success(task_id, success_count=saved_count)
 
-            try:
+            with contextlib.suppress(Exception):
                 await redis_storage.set_task_progress(
                     task_id, {"status": "completed", "items_crawled": saved_count}
                 )
-            except Exception:
-                pass
 
         except Exception as e:
             logger.exception(f"Task {task_id} failed with error: {e}")

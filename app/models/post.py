@@ -4,27 +4,27 @@ All platform content goes into this single table.
 post_type: video | image | text | link | album | short | reel | tweet | reddit_post
 """
 
+import enum
 from datetime import datetime
 
-import enum
 from sqlalchemy import (
     JSON,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
-    Index,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
-class PostType(str, enum.Enum):
+class PostType(enum.StrEnum):
     VIDEO = "video"
     IMAGE = "image"
     TEXT = "text"

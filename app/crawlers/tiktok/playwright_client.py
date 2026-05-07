@@ -4,23 +4,20 @@ Intercepts XHR/Fetch API responses by automating a headless browser with Stealth
 """
 
 import asyncio
-import json
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
 import urllib.parse
 
 from loguru import logger
 from scrapling import StealthyFetcher
 
-from app.core.config import get_settings
 from app.core.browser_manager import browser_manager
+from app.core.config import get_settings
 
 
 class PlaywrightTikTokClient:
     def __init__(self):
-        self.fetcher: Optional[StealthyFetcher] = None
+        self.fetcher: StealthyFetcher | None = None
         # We will collect intercepted API responses here temporarily
-        self.intercepted_data: List[Dict] = []
+        self.intercepted_data: list[dict] = []
 
     async def init_fetcher(self):
         """Initialize the StealthyFetcher via BrowserManager."""
@@ -55,7 +52,7 @@ class PlaywrightTikTokClient:
             except Exception:
                 pass
 
-    async def search_keyword(self, keyword: str, limit: int = 20) -> List[Dict]:
+    async def search_keyword(self, keyword: str, limit: int = 20) -> list[dict]:
         """
         Search TikTok via StealthyFetcher interception.
         """
@@ -97,7 +94,7 @@ class PlaywrightTikTokClient:
 
     async def get_comments(
         self, video_id: str, limit: int = 50, username: str = "tiktok"
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Get comments by navigating to the video URL and scrolling.
         """
@@ -133,25 +130,3 @@ class PlaywrightTikTokClient:
         if self.fetcher:
             await browser_manager.close_fetcher(self.fetcher)
             self.fetcher = None
-
-        for payload in self.intercepted_data:
-            c_list = payload.get("comments", [])
-            if c_list:
-                comments.extend(c_list)
-
-        return comments[:limit]
-
-    async def close(self):
-        """Cleanup browser resources."""
-        if self.page:
-            await self.page.close()
-        if self.context:
-            await self.context.close()
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
-        self.page = None
-        self.context = None
-        self.browser = None
-        self.playwright = None

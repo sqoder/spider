@@ -1,21 +1,18 @@
 import asyncio
-import re
 import json
 import os
-import time
+import re
+
 from loguru import logger
-from typing import Dict, List, Optional, Tuple
-
 from scrapling import Fetcher
-from app.crawlers.base import CommentResult
-
-from app.core.proxy_manager import proxy_manager
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
+from app.core.proxy_manager import proxy_manager
+from app.crawlers.base import CommentResult
 
 # Module-level cookie cache: {filepath: (mtime, cookies_dict)}
-_innertube_cookie_cache: Dict[str, Tuple[float, dict]] = {}
+_innertube_cookie_cache: dict[str, tuple[float, dict]] = {}
 
 
 class InnertubeClient:
@@ -56,7 +53,7 @@ class InnertubeClient:
 
         cookies = {}
         try:
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 for line in f:
                     if not line.strip() or line.startswith("#"):
                         continue
@@ -265,7 +262,7 @@ class InnertubeClient:
 
         try:
             return response.json()
-        except Exception as e:
+        except Exception:
             logger.error(
                 f"Failed to parse Innertube JSON. Status: {response.status_code}, Body: {response.text[:200]}"
             )
@@ -279,7 +276,7 @@ class InnertubeClient:
         mutations = framework.get("entityBatchUpdate", {}).get("mutations", [])
         for mutation in mutations:
             payload = mutation.get("payload", {})
-            for entity_key, entity_val in payload.items():
+            for _entity_key, entity_val in payload.items():
                 if "key" in entity_val:
                     lookup[entity_val["key"]] = entity_val
         return lookup

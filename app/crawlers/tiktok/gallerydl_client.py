@@ -6,7 +6,7 @@ Handles user profiles, video metadata, and media downloads.
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -93,13 +93,13 @@ class GalleryDLClient:
 
             return results
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise CrawlError(self.platform, "extract_metadata", "Timed out (120s)")
 
     async def download(
         self,
         url: str,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
     ) -> list[Path]:
         """
         Download media from a URL.
@@ -151,7 +151,7 @@ class GalleryDLClient:
             logger.info(f"Downloaded {len(downloaded)} files from {url}")
             return downloaded
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise MediaDownloadError(url, "Download timed out (10 min limit)")
 
     async def get_user_content(self, username: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -210,5 +210,5 @@ class GalleryDLClient:
 
             return results[:limit]
 
-        except asyncio.TimeoutError:
-            raise CrawlError(self.platform, "get_user_content", "Timed out")
+        except TimeoutError as e:
+            raise CrawlError(self.platform, "get_user_content", "Timed out") from e

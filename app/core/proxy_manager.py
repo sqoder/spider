@@ -3,7 +3,6 @@ Proxy manager for rotating proxies across requests.
 Supports a simple proxy URL or a pool of proxies.
 """
 
-from typing import Optional
 
 from loguru import logger
 
@@ -34,7 +33,7 @@ class ProxyManager:
         self._enabled = True
         logger.debug(f"Proxy added to pool, total: {len(self._proxies)}")
 
-    def get_proxy(self) -> Optional[str]:
+    def get_proxy(self) -> str | None:
         """Get the next proxy URL using round-robin rotation."""
         if not self._enabled or not self._proxies:
             return None
@@ -43,7 +42,7 @@ class ProxyManager:
         self._current_index += 1
         return proxy
 
-    def get_proxy_dict(self) -> Optional[dict[str, str]]:
+    def get_proxy_dict(self) -> dict[str, str] | None:
         """Get proxy as a dict suitable for httpx/aiohttp."""
         proxy = self.get_proxy()
         if not proxy:

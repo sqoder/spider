@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -71,14 +71,14 @@ class YtdlpClient:
                         f"yt-dlp command failed (attempt {attempt + 1}): {error_msg}. Retrying with different proxy..."
                     )
                     continue
-            except asyncio.TimeoutError:
+            except TimeoutError as e:
                 if attempt < retry_count:
                     logger.warning(f"yt-dlp command timed out (attempt {attempt + 1}). Retrying...")
                     continue
-                raise MediaDownloadError(url, f"Timed out after {retry_count} retries")
+                raise MediaDownloadError(url, f"Timed out after {retry_count} retries") from e
             except Exception as e:
                 logger.error(f"Unexpected error running yt-dlp: {e}")
-                raise MediaDownloadError(url, str(e))
+                raise MediaDownloadError(url, str(e)) from e
 
         return b"", b"", 1
 
@@ -228,8 +228,8 @@ class YtdlpClient:
     async def download_video(
         self,
         url: str,
-        format_id: Optional[str] = None,
-        output_template: Optional[str] = None,
+        format_id: str | None = None,
+        output_template: str | None = None,
         max_quality: str = "720",
     ) -> Path:
         """Download a video."""
@@ -293,7 +293,7 @@ class YtdlpClient:
     async def download_audio(
         self,
         url: str,
-        output_template: Optional[str] = None,
+        output_template: str | None = None,
     ) -> Path:
         """Download audio only (as MP3)."""
         self.download_dir.mkdir(parents=True, exist_ok=True)

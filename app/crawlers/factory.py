@@ -2,7 +2,6 @@
 Crawler factory - creates platform-specific crawler instances.
 """
 
-from typing import Type
 
 from loguru import logger
 
@@ -19,10 +18,10 @@ class CrawlerFactory:
         results = await crawler.search("AI tools", limit=20)
     """
 
-    _registry: dict[str, Type[BaseCrawler]] = {}
+    _registry: dict[str, type[BaseCrawler]] = {}
 
     @classmethod
-    def register(cls, platform: str, crawler_class: Type[BaseCrawler]) -> None:
+    def register(cls, platform: str, crawler_class: type[BaseCrawler]) -> None:
         """Register a crawler class for a platform."""
         cls._registry[platform.lower()] = crawler_class
         logger.debug(f"Registered crawler for platform: {platform}")

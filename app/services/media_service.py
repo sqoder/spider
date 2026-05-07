@@ -1,7 +1,8 @@
 import asyncio
-import httpx
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import httpx
 from loguru import logger
 from scrapling import Fetcher
 
@@ -225,7 +226,7 @@ class MediaService:
 
             try:
 
-                def _do_fetch():
+                def _do_fetch(murl=murl):
                     return fetcher.get(murl)
 
                 resp = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)

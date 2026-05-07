@@ -2,13 +2,13 @@
 Tests for API endpoints.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import AsyncMock, patch
 
 from app.main import app
-from app.crawlers.base import CrawlResult
 
 
 @pytest_asyncio.fixture

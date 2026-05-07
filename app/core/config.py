@@ -5,7 +5,6 @@ Uses pydantic-settings to load from environment variables and .env file.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,7 +30,7 @@ class Settings(BaseSettings):
     save_data_option: str = "jsonl"
     save_data_path: str = "data"
     # Subdirectory name under {platform}/ (defaults to the format name, e.g. "csv")
-    save_data_subdir: Optional[str] = None
+    save_data_subdir: str | None = None
 
     @property
     def data_path(self) -> Path:
@@ -69,25 +68,25 @@ class Settings(BaseSettings):
     media_max_size_mb: int = 500
 
     # ---- YouTube ----
-    youtube_api_key: Optional[str] = None
+    youtube_api_key: str | None = None
     youtube_daily_quota: int = 10000
     youtube_use_scraper: bool = True  # Default to True for "native crawler" preference
-    youtube_cookies_file: Optional[str] = None
+    youtube_cookies_file: str | None = None
     playwright_browser_count: int = 3
 
     # ---- Reddit ----
-    reddit_client_id: Optional[str] = None
-    reddit_client_secret: Optional[str] = None
+    reddit_client_id: str | None = None
+    reddit_client_secret: str | None = None
     reddit_user_agent: str = "GlobalMediaCrawler/1.0"
 
     # ---- TikTok ----
-    tiktok_cookies_file: Optional[str] = None
+    tiktok_cookies_file: str | None = None
 
     # ---- Instagram ----
-    instagram_cookies_file: Optional[str] = None
+    instagram_cookies_file: str | None = None
 
     # ---- X / Twitter ----
-    x_accounts_file: Optional[str] = None
+    x_accounts_file: str | None = None
 
     # ---- Rate Limiting ----
     default_rate_limit: int = 30
@@ -107,7 +106,7 @@ class Settings(BaseSettings):
     crawl_media_enabled: bool = True
 
     # ---- Proxy ----
-    proxy_url: Optional[str] = None
+    proxy_url: str | None = None
     proxy_rotation: bool = False
 
     @property
@@ -122,7 +121,7 @@ class Settings(BaseSettings):
         return self.app_env == "production"
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached application settings (singleton)."""
     return Settings()

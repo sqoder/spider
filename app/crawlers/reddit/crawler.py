@@ -23,24 +23,23 @@ Usage:
 """
 
 import re
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.reddit.api_client import RedditAPIClient
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 #   Helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def _ts(unix: Any) -> Optional[datetime]:
+def _ts(unix: Any) -> datetime | None:
     """Convert a Unix timestamp to a UTC-aware datetime."""
     try:
-        return datetime.fromtimestamp(float(unix), tz=timezone.utc)
+        return datetime.fromtimestamp(float(unix), tz=UTC)
     except (TypeError, ValueError, OSError):
         return None
 
@@ -176,7 +175,7 @@ def _media_from_post(data: dict) -> list[dict]:
     return media_list
 
 
-def _flair(data: dict, prefix: str) -> Optional[str]:
+def _flair(data: dict, prefix: str) -> str | None:
     """Build a readable flair string from richtext or plain text fields."""
     # richtext flair
     richtext = data.get(f"{prefix}_flair_richtext") or []
@@ -250,7 +249,7 @@ class RedditCrawler(BaseCrawler):
         logger.info(f"[Reddit] Search: '{keyword}', limit={limit}")
 
         results: list[CrawlResult] = []
-        after: Optional[str] = None
+        after: str | None = None
         remaining = limit
 
         while remaining > 0:
@@ -276,7 +275,7 @@ class RedditCrawler(BaseCrawler):
         logger.info(f"[Reddit] User posts: u/{username}, limit={limit}")
 
         results: list[CrawlResult] = []
-        after: Optional[str] = None
+        after: str | None = None
         remaining = limit
 
         while remaining > 0:
@@ -359,7 +358,7 @@ class RedditCrawler(BaseCrawler):
         children: list[dict],
         results: list[CommentResult],
         post_fullname: str,
-        parent_id: Optional[str],
+        parent_id: str | None,
         limit: int,
     ) -> None:
         """
@@ -544,7 +543,7 @@ class RedditCrawler(BaseCrawler):
             raw_sources={"reddit_api": data},
         )
 
-    def _parse_comment(self, data: dict, parent_comment_id: Optional[str]) -> CommentResult:
+    def _parse_comment(self, data: dict, parent_comment_id: str | None) -> CommentResult:
         """Parse a Reddit comment dict into a fully-populated CommentResult."""
 
         comment_id = data.get("id", "")

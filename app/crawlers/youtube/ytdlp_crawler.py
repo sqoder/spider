@@ -3,15 +3,15 @@ yt-dlp based YouTube Crawler.
 Used as a stable fallback when no API key is provided.
 """
 
-from typing import Optional
 from datetime import datetime
+
 from loguru import logger
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
 
-def _parse_upload_date(dt_str: Optional[str]) -> Optional[datetime]:
+def _parse_upload_date(dt_str: str | None) -> datetime | None:
     """Parse YYYYMMDD strings returned by yt-dlp into datetime objects."""
     if not dt_str:
         return None

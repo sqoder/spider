@@ -3,7 +3,6 @@ Redis caching and queue operations.
 Provides caching for API responses, task status, and rate limit state.
 """
 
-from typing import Any, Optional
 
 import redis.asyncio as redis
 from loguru import logger
@@ -15,7 +14,7 @@ class RedisStorage:
     """Redis cache and queue operations."""
 
     def __init__(self):
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
 
     async def connect(self) -> None:
         """Initialize Redis connection. No-op if URL is empty."""
@@ -42,7 +41,7 @@ class RedisStorage:
             self._client = None
 
     @property
-    def client(self) -> Optional[redis.Redis]:
+    def client(self) -> redis.Redis | None:
         return self._client
 
     @property
@@ -51,7 +50,7 @@ class RedisStorage:
 
     # ---- Cache Operations ----
 
-    async def cache_get(self, key: str) -> Optional[str]:
+    async def cache_get(self, key: str) -> str | None:
         """Get a cached value."""
         if not self._client:
             return None
@@ -61,7 +60,7 @@ class RedisStorage:
             logger.warning(f"Redis cache get error: {e}")
             return None
 
-    async def cache_set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
+    async def cache_set(self, key: str, value: str, ttl: int | None = None) -> bool:
         """Set a cached value with optional TTL."""
         if not self._client:
             return False
@@ -86,7 +85,7 @@ class RedisStorage:
         except redis.RedisError:
             return False
 
-    async def cache_json_get(self, key: str) -> Optional[dict]:
+    async def cache_json_get(self, key: str) -> dict | None:
         """Get a JSON-cached value."""
         import json
 
@@ -98,7 +97,7 @@ class RedisStorage:
                 pass
         return None
 
-    async def cache_json_set(self, key: str, data: dict, ttl: Optional[int] = None) -> bool:
+    async def cache_json_set(self, key: str, data: dict, ttl: int | None = None) -> bool:
         """Cache a value as JSON."""
         import json
 
@@ -146,7 +145,7 @@ class RedisStorage:
         except redis.RedisError:
             pass
 
-    async def get_task_progress(self, task_id: int) -> Optional[dict]:
+    async def get_task_progress(self, task_id: int) -> dict | None:
         """Get real-time task progress."""
         return await self.cache_json_get(f"task_progress:{task_id}")
 

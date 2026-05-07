@@ -5,13 +5,13 @@ Scope: single URL parsing, public profile info, limited keyword search.
 """
 
 import asyncio
+import contextlib
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from scrapling import Fetcher
 from loguru import logger
+from scrapling import Fetcher
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 
@@ -149,10 +149,8 @@ class XCrawler(BaseCrawler):
             published_at = None
             ts = info.get("timestamp")
             if ts:
-                try:
-                    published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
-                except:
-                    pass
+                with contextlib.suppress(BaseException):
+                    published_at = datetime.fromtimestamp(ts, tz=UTC)
 
             return CrawlResult(
                 platform="x",
@@ -185,7 +183,7 @@ class XCrawler(BaseCrawler):
 
     # ---- Private helpers ----
 
-    def _parse_syndication_tweet(self, tweet: dict, username: str) -> Optional[CrawlResult]:
+    def _parse_syndication_tweet(self, tweet: dict, username: str) -> CrawlResult | None:
         if not tweet.get("id_str"):
             return None
 
@@ -216,7 +214,7 @@ class XCrawler(BaseCrawler):
                 # "Mon Jul 29 20:33:27 +0000 2024"
                 dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
                 published_at = dt
-            except:
+            except Exception:
                 pass
 
         return CrawlResult(

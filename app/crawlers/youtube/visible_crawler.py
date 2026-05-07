@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote_plus, urljoin, urlparse, parse_qs
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 from loguru import logger
 from playwright.async_api import Page
@@ -24,7 +24,6 @@ from app.core.config import get_settings
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.innertube_client import InnertubeClient
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
-
 
 YOUTUBE_ORIGIN = "https://www.youtube.com"
 YOUTUBE_USER_AGENT = (
@@ -436,11 +435,10 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str) -> None:
         await fetcher.page.goto(url, wait_until="domcontentloaded")
         await self._handle_consent(fetcher)
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):
             await fetcher.page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:
-            # networkidle timeout is non-fatal — continue with whatever loaded
-            pass
 
     async def _handle_consent(self, fetcher: StealthyFetcher) -> None:
         # Scrapling adaptive find for consent button
@@ -896,7 +894,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         if not value:
             return None
         try:
-            return datetime.strptime(value, "%Y%m%d").replace(tzinfo=timezone.utc)
+            return datetime.strptime(value, "%Y%m%d").replace(tzinfo=UTC)
         except (TypeError, ValueError):
             return None
 
@@ -991,7 +989,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         published_at = None
         if raw.get("timestamp"):
             try:
-                published_at = datetime.fromtimestamp(raw["timestamp"], tz=timezone.utc)
+                published_at = datetime.fromtimestamp(raw["timestamp"], tz=UTC)
             except (TypeError, ValueError, OSError):
                 published_at = None
         author_handle = raw.get("author_id") or raw.get("author")
@@ -1076,7 +1074,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             author_username=author_handle,
             like_count=visible_data["like_count"],
             reply_count=visible_data["reply_count"],
-            published_at=datetime.now(timezone.utc),
+            published_at=datetime.now(UTC),
             raw=row,
             visible_data=visible_data,
             raw_sources={"dom_snapshot": row},
@@ -1095,7 +1093,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
     ) -> dict[str, Any]:
         meta: dict[str, Any] = {
             "method": method,
-            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "captured_at": datetime.now(UTC).isoformat(),
             "url": url,
         }
         if limit is not None:

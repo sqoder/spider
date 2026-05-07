@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
 
 
