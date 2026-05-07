@@ -41,6 +41,20 @@ class InnertubeClient:
         self.api_key = None
         self.context = None
 
+    def _rotate_fetcher(self) -> None:
+        """Rotate the proxy and re-create the Scrapling Fetcher."""
+        if proxy_manager.enabled:
+            old_proxy = self.proxy
+            self.proxy = proxy_manager.get_proxy()
+            if old_proxy and old_proxy != self.proxy:
+                proxy_manager.remove_proxy(old_proxy)
+            logger.info(f"[Innertube] Rotated proxy to: {self.proxy}")
+            self.fetcher = Fetcher(
+                proxy=self.proxy,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                timeout=30000,
+            )
+
     def _parse_cookies_for_scrapling(self, filepath: str) -> dict:
         """Parse Netscape format cookies for Scrapling. Results are cached by mtime."""
         try:
@@ -65,7 +79,7 @@ class InnertubeClient:
             logger.error(f"Failed to parse cookies for Scrapling: {e}")
         return cookies
 
-    def _extract_json(self, html: str, start_pattern: str) -> dict:
+    def _extract_json(self, html: str, start_pattern: str) -> dict | None:
         match = re.search(start_pattern, html)
         if not match:
             return None
@@ -97,49 +111,68 @@ class InnertubeClient:
             logger.error(f"Failed to parse extracted JSON: {e}")
             return None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _get_initial_data(self, video_id: str):
         url = f"https://www.youtube.com/watch?v={video_id}"
 
-        def _do_fetch():
-            return self.fetcher.get(url, cookies=self.cookies)
+        max_retries = 5 if proxy_manager.enabled else 3
+        for attempt in range(max_retries):
+            try:
+                def _do_fetch():
+                    return self.fetcher.get(url, cookies=self.cookies)
 
-        response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
-        html = response.text
+                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
-        # Extract API Key - Broaden regex
-        api_key_match = re.search(r'["\']INNERTUBE_API_KEY["\']\s*:\s*["\']([^"\']+)["\']', html)
-        if not api_key_match:
-            # More targeted fallback: look for common Innertube key patterns
-            api_key_match = re.search(r'["\']key["\']\s*:\s*["\']([A-Za-z0-9_-]{30,})["\']', html)
+                if response.status != 200:
+                    logger.warning(f"YouTube Watch page failed with status {response.status}")
+                    if attempt < max_retries - 1:
+                        self._rotate_fetcher()
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    raise Exception(f"YouTube Watch page failed with status {response.status}")
 
-        if not api_key_match:
-            logger.error(f"Failed to find API key in HTML for {video_id}")
-            raise Exception("Could not find INNERTUBE_API_KEY")
+                html = response.body.decode("utf-8", errors="ignore")
 
-        self.api_key = api_key_match.group(1)
+                # Extract API Key - Broaden regex
+                api_key_match = re.search(r'["\']INNERTUBE_API_KEY["\']\s*:\s*["\']([^"\']+)["\']', html)
+                if not api_key_match:
+                    # More targeted fallback: look for common Innertube key patterns
+                    api_key_match = re.search(r'["\']key["\']\s*:\s*["\']([A-Za-z0-9_-]{30,})["\']', html)
 
-        # Extract Context - More robust extraction
-        self.context = self._extract_json(html, r'["\']INNERTUBE_CONTEXT["\']\s*:\s*\{')
-        if not self.context:
-            self.context = self._extract_json(
-                html, r'ytcfg\.set\(\{.*?"INNERTUBE_CONTEXT"\s*:\s*\{'
-            )
+                if not api_key_match:
+                    raise Exception("Could not find INNERTUBE_API_KEY")
 
-        if not self.context:
-            logger.error(f"Failed to find context in HTML for {video_id}")
-            raise Exception("Could not find INNERTUBE_CONTEXT")
+                self.api_key = api_key_match.group(1)
 
-        # Extract initial data for continuation
-        yt_data = self._extract_json(html, r"var ytInitialData = \{")
-        if not yt_data:
-            yt_data = self._extract_json(html, r'window\["ytInitialData"\]\s*=\s*\{')
+                # Extract Context - More robust extraction
+                self.context = self._extract_json(html, r'["\']INNERTUBE_CONTEXT["\']\s*:\s*\{')
+                if not self.context:
+                    self.context = self._extract_json(
+                        html, r'ytcfg\.set\(\{.*?"INNERTUBE_CONTEXT"\s*:\s*\{'
+                    )
 
-        if not yt_data:
-            logger.error(f"Failed to find ytInitialData in HTML for {video_id}")
-            raise Exception("Could not find ytInitialData")
+                if not self.context:
+                    raise Exception("Could not find INNERTUBE_CONTEXT")
 
-        return yt_data
+                # Extract initial data for continuation
+                yt_data = self._extract_json(html, r"var ytInitialData = \{")
+                if not yt_data:
+                    yt_data = self._extract_json(html, r'window\["ytInitialData"\]\s*=\s*\{')
+
+                if not yt_data:
+                    raise Exception("Could not find ytInitialData")
+
+                return yt_data
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"[Innertube] Watch page attempt {attempt + 1} failed: {e}. Rotating proxy and retrying..."
+                    )
+                    self._rotate_fetcher()
+                    await asyncio.sleep(2**attempt)
+                    continue
+                logger.error(f"[Innertube] Failed to get initial data for {video_id} after {max_retries} attempts: {e}")
+                raise
 
     async def get_comments(self, video_id: str, limit: int = 100) -> list[CommentResult]:
         try:
@@ -239,34 +272,45 @@ class InnertubeClient:
         payload = {"context": self.context, "continuation": token}
 
         # Add mandatory headers for Innertube
+        context = self.context or {}
         headers = {
             "Content-Type": "application/json",
-            "X-Youtube-Client-Name": str(self.context.get("client", {}).get("clientName", "1")),
-            "X-Youtube-Client-Version": self.context.get("client", {}).get(
+            "X-Youtube-Client-Name": str(context.get("client", {}).get("clientName", "1")),
+            "X-Youtube-Client-Version": context.get("client", {}).get(
                 "clientVersion", "2.20240210.01.00"
             ),
             "Origin": "https://www.youtube.com",
             "Referer": "https://www.youtube.com/",
         }
 
-        def _do_fetch():
-            return self.fetcher.post(url, json=payload, headers=headers, cookies=self.cookies)
+        max_retries = 5 if proxy_manager.enabled else 3
+        for attempt in range(max_retries):
+            try:
+                def _do_fetch():
+                    return self.fetcher.post(url, json=payload, headers=headers, cookies=self.cookies)
 
-        response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
-        if response.status_code != 200:
-            logger.error(
-                f"Innertube API failed with status {response.status_code}: {response.text[:200]}"
-            )
-            return {}
+                if response.status != 200:
+                    logger.warning(f"Innertube post failed with status {response.status}")
+                    if attempt < max_retries - 1:
+                        self._rotate_fetcher()
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    raise Exception(f"Innertube post failed with status {response.status}")
 
-        try:
-            return response.json()
-        except Exception:
-            logger.error(
-                f"Failed to parse Innertube JSON. Status: {response.status_code}, Body: {response.text[:200]}"
-            )
-            return {}
+                return response.json()
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"[Innertube] Next page attempt {attempt + 1} failed: {e}. Rotating proxy and retrying..."
+                    )
+                    self._rotate_fetcher()
+                    await asyncio.sleep(2**attempt)
+                    continue
+                logger.error(f"[Innertube] Failed next page fetch after {max_retries} attempts: {e}")
+                return {}
 
     @staticmethod
     def _build_entity_lookup(data: dict) -> dict:

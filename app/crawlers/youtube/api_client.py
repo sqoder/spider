@@ -79,17 +79,17 @@ class YouTubeAPIClient:
 
                 response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
-                if response.status_code != 200:
+                if response.status_code != 200:  # type: ignore[attr-defined]
                     logger.warning(
-                        f"YouTube API request failed (status {response.status_code}): {response.text[:100]}"
+                        f"YouTube API request failed (status {response.status_code}): {response.text[:100]}"  # type: ignore[attr-defined]
                     )
-                    if attempt < retry_count and response.status_code >= 500:
+                    if attempt < retry_count and response.status_code >= 500:  # type: ignore[attr-defined]
                         await asyncio.sleep(2**attempt)
                         continue
-                    response.raise_for_status()
+                    response.raise_for_status()  # type: ignore[attr-defined]
 
                 self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
-                return response.json()
+                return response.json()  # type: ignore[attr-defined]
             except Exception as e:
                 if attempt < retry_count:
                     logger.warning(
@@ -108,20 +108,11 @@ class YouTubeAPIClient:
         max_results: int = 20,
         order: str = "relevance",
         published_after: str | None = None,
+        published_before: str | None = None,
         page_token: str | None = None,
     ) -> dict:
         """
-        Search for videos.
-
-        Args:
-            query: Search query string
-            max_results: Maximum results (1-50)
-            order: Sort order (relevance, date, viewCount, rating)
-            published_after: ISO 8601 datetime string
-            page_token: Pagination token
-
-        Returns:
-            API response dict with items and pagination info
+        Search for videos with time range support.
         """
         params = {
             "part": "snippet",
@@ -132,6 +123,8 @@ class YouTubeAPIClient:
         }
         if published_after:
             params["publishedAfter"] = published_after
+        if published_before:
+            params["publishedBefore"] = published_before
         if page_token:
             params["pageToken"] = page_token
 
@@ -261,4 +254,5 @@ class YouTubeAPIClient:
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        await self._client.aclose()
+        # Scrapling Fetcher is managed elsewhere or sync, no explicit aclose needed
+        pass

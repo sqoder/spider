@@ -63,8 +63,8 @@ async def test_search_stores_and_returns_items():
     crawler = FakeCrawler()
     store = FakeStore()
     service = CrawlService(
-        crawler_factory=lambda platform: crawler,
-        store_factory=lambda platform, task_type: store,
+        crawler_factory=lambda platform: crawler,  # type: ignore[arg-type]
+        store_factory=lambda platform, task_type: store,  # type: ignore[arg-type]
     )
 
     result = await service.search("youtube", "AI", limit=10)
@@ -82,8 +82,8 @@ async def test_detail_stores_comments_when_requested():
     crawler = FakeCrawler()
     store = FakeStore()
     service = CrawlService(
-        crawler_factory=lambda platform: crawler,
-        store_factory=lambda platform, task_type: store,
+        crawler_factory=lambda platform: crawler,  # type: ignore[arg-type]
+        store_factory=lambda platform, task_type: store,  # type: ignore[arg-type]
     )
 
     result = await service.detail(

@@ -4,3 +4,4 @@ from app.models.comment import Comment  # noqa: F401
 from app.models.media import MediaAsset  # noqa: F401
 from app.models.post import Post  # noqa: F401
 from app.models.task import CrawlTask  # noqa: F401
+from app.models.account import Account  # noqa: F401

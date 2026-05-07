@@ -13,8 +13,7 @@ router = APIRouter(prefix="/crawl", tags=["Crawl"])
 
 @router.post("/search")
 async def crawl_search(request: SearchRequest):
-    platform = request.platform.value if hasattr(request.platform, "value") else request.platform
-    result = await CrawlService().search(platform, request.keyword, limit=request.limit)
+    result = await CrawlService().search(request.platform, request.keyword, limit=request.limit)
     return {
         "platform": result.platform,
         "keyword": result.keyword,
@@ -25,9 +24,8 @@ async def crawl_search(request: SearchRequest):
 
 @router.post("/detail")
 async def crawl_detail(request: DetailRequest):
-    platform = request.platform.value if hasattr(request.platform, "value") else request.platform
     result = await CrawlService().detail(
-        platform,
+        request.platform,
         request.url,
         comments_limit=request.comments_limit,
     )

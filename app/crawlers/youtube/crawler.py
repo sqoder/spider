@@ -25,21 +25,72 @@ class YouTubeCrawler(BaseCrawler):
         self.ytdlp = YtdlpClient()
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
-        """Search YouTube videos by keyword with quota fallback."""
+        """Search YouTube videos by keyword with quota fallback and time-slicing for massive data retrieval."""
         try:
             await self._rate_limit(cost=100)  # search.list costs 100 quota units
             logger.info(f"YouTube search: '{keyword}', limit={limit}")
 
-            results = []
-            page_token = None
-            remaining = limit
+            if limit <= 100:
+                return await self._search_batch(keyword, limit)
 
-            while remaining > 0:
-                batch_size = min(remaining, 50)
+            # Time-sliced search for high-concurrency / massive data ingestion (bypasses 500-1000 item limit)
+            from datetime import timedelta
+            now = datetime.now()
+            
+            # Slice into weekly segments (7 days) going backwards in time
+            slice_days = 7
+            current_end = now
+            total_slices = 24  # Look back up to ~6 months
+            
+            results: list[CrawlResult] = []
+            for _ in range(total_slices):
+                if len(results) >= limit:
+                    break
+                    
+                current_start = current_end - timedelta(days=slice_days)
+                published_after = current_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                published_before = current_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                logger.info(f"[YouTube Slicer] Searching slice {published_after} to {published_before}")
+                
+                slice_limit = min(limit - len(results), 500)
+                slice_results = await self._search_batch(
+                    keyword,
+                    slice_limit,
+                    published_after=published_after,
+                    published_before=published_before,
+                )
+                results.extend(slice_results)
+                
+                current_end = current_start
+                
+                if not slice_results and len(results) == 0:
+                    continue
+
+            logger.info(f"[YouTube Slicer] Completed search, gathered {len(results)} total results")
+            return results[:limit]
+
+        except QuotaExhaustedError:
+            logger.warning("YouTube API Quota exhausted! Falling back to yt-dlp for search.")
+            from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+
+            crawler = YtdlpYouTubeCrawler()
+            return await crawler.search(keyword, limit)
+
+    async def _search_batch(self, keyword: str, limit: int, **kwargs) -> list[CrawlResult]:
+        """Perform a single standard search batch with pagination."""
+        results = []
+        page_token = None
+        remaining = limit
+
+        while remaining > 0:
+            batch_size = min(remaining, 50)
+            try:
                 response = await self.api.search_videos(
                     query=keyword,
                     max_results=batch_size,
                     page_token=page_token,
+                    **kwargs,
                 )
 
                 items = response.get("items", [])
@@ -64,15 +115,11 @@ class YouTubeCrawler(BaseCrawler):
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break
+            except Exception as e:
+                logger.error(f"[YouTube Slicer] Search batch failed: {e}")
+                break
 
-            logger.info(f"YouTube search returned {len(results)} results")
-            return results[:limit]
-        except QuotaExhaustedError:
-            logger.warning("YouTube API Quota exhausted! Falling back to yt-dlp for search.")
-            from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
-
-            crawler = YtdlpYouTubeCrawler()
-            return await crawler.search(keyword, limit)
+        return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get videos from a YouTube channel by username/handle."""

@@ -120,6 +120,7 @@ async def test_extract_comments_info_uses_comment_only_command():
         info = await client.extract_comments_info("https://youtu.be/abc12345678", max_comments=7)
 
     assert info["id"] == "123"
+    assert mock_run.await_args is not None
     cmd = mock_run.await_args.args[0]
     assert "--write-comments" in cmd
     assert "youtube:max_comments=7,7,7,7" in cmd

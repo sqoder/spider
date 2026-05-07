@@ -47,7 +47,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         logger.info(f"[YouTube visible] Searching: {keyword}")
         await self._rate_limit()
         fetcher = await self._new_fetcher()
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
         results: list[CrawlResult] = []
         page_url = f"{YOUTUBE_ORIGIN}/results?search_query={quote_plus(keyword)}"
 
@@ -106,7 +106,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         logger.info(f"[YouTube visible] Extracting detail: {url}")
         await self._rate_limit()
         fetcher = await self._new_fetcher()
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
         ytdlp_info: dict[str, Any] | None = None
 
         try:
@@ -433,20 +433,20 @@ class VisibleYouTubeCrawler(BaseCrawler):
         )
 
     async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str) -> None:
-        await fetcher.page.goto(url, wait_until="domcontentloaded")
+        await fetcher.page.goto(url, wait_until="domcontentloaded")  # type: ignore[attr-defined]
         await self._handle_consent(fetcher)
         import contextlib
 
         with contextlib.suppress(Exception):
-            await fetcher.page.wait_for_load_state("networkidle", timeout=10000)
+            await fetcher.page.wait_for_load_state("networkidle", timeout=10000)  # type: ignore[attr-defined]
 
     async def _handle_consent(self, fetcher: StealthyFetcher) -> None:
         # Scrapling adaptive find for consent button
         try:
-            button = fetcher.find_similar("Accept all", "button")
+            button = fetcher.find_similar("Accept all", "button")  # type: ignore[attr-defined]
             if button:
                 button.click()
-                await fetcher.page.wait_for_load_state("domcontentloaded")
+                await fetcher.page.wait_for_load_state("domcontentloaded")  # type: ignore[attr-defined]
                 return
         except Exception:
             pass
@@ -458,7 +458,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "ytd-button-renderer:has-text('Accept all')",
             "form[action*='consent.youtube.com/save'] button",
         ]
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -489,7 +489,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _expand_description(self, fetcher: StealthyFetcher) -> None:
         # Scrapling adaptive find for "more" button
         try:
-            button = fetcher.find_similar("more", "button")
+            button = fetcher.find_similar("more", "button")  # type: ignore[attr-defined]
             if button:
                 button.click()
                 await asyncio.sleep(0.5)
@@ -504,7 +504,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "button:has-text('more')",
             "button:has-text('Show more')",
         ]
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -538,7 +538,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _get_comments_from_dom(self, video_id: str, limit: int) -> list[CommentResult]:
         url = f"{YOUTUBE_ORIGIN}/watch?v={video_id}"
         fetcher = await self._new_fetcher()
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
         results: list[CommentResult] = []
         seen: set[str] = set()
         stale_rounds = 0

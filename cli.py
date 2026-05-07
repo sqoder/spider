@@ -24,7 +24,7 @@ async def run_search(args: CrawlArgs):
         limit=args.limit,
         download_media=args.download_media
     )
-    print(f"Fetched {len(results)} results from {args.platform}")
+    print(f"Fetched {len(results.items)} results from {args.platform}")
 
 async def run_detail(args: CrawlArgs):
     service = CrawlService()
@@ -73,10 +73,8 @@ def main():
     try:
         asyncio.run(coro)
     except RuntimeError:
-        # For tests or environments with a running loop
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # In tests, we just want to ensure it's a coroutine that could run
             pass
         else:
             loop.run_until_complete(coro)

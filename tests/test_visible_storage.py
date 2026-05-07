@@ -55,6 +55,11 @@ async def test_db_store_persists_visible_contract_fields():
             )
         ).scalar_one()
 
+        assert post.visible_data is not None
+        assert post.raw_sources is not None
+        assert post.capture_meta is not None
+        assert comment.visible_data is not None
+        assert comment.raw_sources is not None
         assert post.visible_data["title"] == "Visible Detail Title"
         assert post.raw_sources["yt_initial_data"]["ok"] is True
         assert post.capture_meta["method"] == "youtube_visible_detail"

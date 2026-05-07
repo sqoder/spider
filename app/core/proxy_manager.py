@@ -20,9 +20,11 @@ class ProxyManager:
         """Initialize proxy settings from config."""
         settings = get_settings()
         if settings.proxy_url:
-            self._proxies = [settings.proxy_url]
-            self._enabled = True
-            logger.info(f"Proxy enabled: {settings.proxy_url[:30]}...")
+            # Support comma-separated list of proxies for a static proxy pool
+            self._proxies = [p.strip() for p in settings.proxy_url.split(",") if p.strip()]
+            self._enabled = bool(self._proxies)
+            if self._enabled:
+                logger.info(f"Proxy pool initialized with {len(self._proxies)} proxies.")
         else:
             logger.info("No proxy configured, using direct connections")
 
@@ -33,13 +35,41 @@ class ProxyManager:
         logger.debug(f"Proxy added to pool, total: {len(self._proxies)}")
 
     def get_proxy(self) -> str | None:
-        """Get the next proxy URL using round-robin rotation."""
+        """Get the next proxy URL using round-robin rotation, with dynamic session support for residential proxies."""
         if not self._enabled or not self._proxies:
             return None
 
         proxy = self._proxies[self._current_index % len(self._proxies)]
         self._current_index += 1
+
+        # Dynamic session generation for residential proxies (e.g., Webshare, Bright Data)
+        settings = get_settings()
+        if settings.proxy_rotation and "-session-" in proxy:
+            import uuid
+            import re
+            session_id = uuid.uuid4().hex[:8]
+            # Replace -session-xxxx with -session-<random_id>
+            proxy = re.sub(r"-session-[^:@/]+", f"-session-{session_id}", proxy)
+
         return proxy
+
+    def remove_proxy(self, proxy_url: str) -> None:
+        """Remove a blocked or dead proxy from the pool."""
+        # Clean session IDs if dynamic to find base proxy URL match
+        import re
+        base_url = re.sub(r"-session-[^:@/]+", "-session-", proxy_url)
+        
+        match_found = False
+        for p in list(self._proxies):
+            p_base = re.sub(r"-session-[^:@/]+", "-session-", p)
+            if p_base == base_url or p == proxy_url:
+                self._proxies.remove(p)
+                match_found = True
+                
+        if match_found:
+            logger.warning(f"Removed dead proxy. Remaining: {len(self._proxies)}")
+            if len(self._proxies) == 0:
+                self._enabled = False
 
     def get_proxy_dict(self) -> dict[str, str] | None:
         """Get proxy as a dict suitable for httpx/aiohttp."""

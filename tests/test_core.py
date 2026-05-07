@@ -25,7 +25,7 @@ class TestConfig:
 
     def test_default_settings(self):
         settings = Settings(
-            _env_file=None,  # Don't load .env for tests
+            _env_file=None,  # type: ignore[call-arg]
         )
         assert settings.app_name == "GlobalMediaCrawler"
         assert settings.debug is True
@@ -37,14 +37,14 @@ class TestConfig:
         assert s1 is s2
 
     def test_is_production(self):
-        settings = Settings(app_env="production", _env_file=None)
+        settings = Settings(app_env="production", _env_file=None)  # type: ignore[call-arg]
         assert settings.is_production is True
 
-        settings2 = Settings(app_env="development", _env_file=None)
+        settings2 = Settings(app_env="development", _env_file=None)  # type: ignore[call-arg]
         assert settings2.is_production is False
 
     def test_youtube_crawler_settings(self):
-        settings = Settings(_env_file=None)
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
         # Check default values for new settings
         assert hasattr(settings, "youtube_cookies_file")
         assert settings.playwright_browser_count == 3
@@ -120,7 +120,9 @@ class TestRateLimiter:
 
         result = await limiter.acquire("test")
         assert result is True
-        assert limiter.get_remaining("test") < 5
+        remaining = limiter.get_remaining("test")
+        assert remaining is not None
+        assert remaining < 5
 
     @pytest.mark.asyncio
     async def test_acquire_unconfigured_platform(self):
@@ -141,4 +143,5 @@ class TestRateLimiter:
         await limiter.acquire("test")
         await limiter.acquire("test")
         remaining = limiter.get_remaining("test")
+        assert remaining is not None
         assert remaining < 2

@@ -33,7 +33,8 @@ class PlaywrightTikTokClient:
         """Simulate human scrolling using Scrapling's page evaluation."""
         for _ in range(max_scrolls):
             # StealthyFetcher has access to the playwright page via .page
-            await self.fetcher.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            if self.fetcher:
+                await self.fetcher.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")  # type: ignore[attr-defined]
             await asyncio.sleep(delay)
 
     async def _handle_response(self, response):
@@ -60,7 +61,9 @@ class PlaywrightTikTokClient:
         self.intercepted_data.clear()
 
         # Access raw playwright page to setup listener
-        page = self.fetcher.page
+        if not self.fetcher:
+            return []
+        page = self.fetcher.page  # type: ignore[attr-defined]
         page.on("response", self._handle_response)
 
         url = f"https://www.tiktok.com/search?q={urllib.parse.quote(keyword)}"
@@ -77,7 +80,9 @@ class PlaywrightTikTokClient:
             logger.warning(f"[TikTok Scrapling] Search timeout or error: {e}")
 
         finally:
-            page.remove_listener("response", self._handle_response)
+            if self.fetcher:
+                page.remove_listener("response", self._handle_response)
+                self.fetcher = await browser_manager.record_action(self.fetcher)
 
         # Parse all intercepted data
         videos = []
@@ -101,7 +106,9 @@ class PlaywrightTikTokClient:
         await self.init_fetcher()
         self.intercepted_data.clear()
 
-        page = self.fetcher.page
+        if not self.fetcher:
+            return []
+        page = self.fetcher.page  # type: ignore[attr-defined]
         page.on("response", self._handle_response)
 
         url = f"https://www.tiktok.com/@{username}/video/{video_id}"
@@ -114,7 +121,9 @@ class PlaywrightTikTokClient:
         except Exception as e:
             logger.warning(f"[TikTok Scrapling] Comments timeout or error: {e}")
         finally:
-            page.remove_listener("response", self._handle_response)
+            if self.fetcher:
+                page.remove_listener("response", self._handle_response)
+                self.fetcher = await browser_manager.record_action(self.fetcher)
 
         # Deduplicate and extract comments from intercepted payloads
         all_comments = []

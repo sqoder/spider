@@ -30,12 +30,12 @@ class FileStoreImplement(BaseStore):
         """
         settings = get_settings()
         subdir = settings.save_data_subdir or self.file_type
-        platform_dir = self.base_dir / self.platform / subdir
+        platform_dir = self.base_dir / self.platform / settings.run_timestamp / "text" / subdir
 
         def _mkdir():
             platform_dir.mkdir(parents=True, exist_ok=True)
 
-        await anyio.to_thread.run_sync(_mkdir)
+        await anyio.to_thread.run_sync(_mkdir)  # type: ignore[attr-defined]
 
         filename = f"{self.crawler_type}_{item_type}.{self.file_type}"
         return platform_dir / filename
@@ -79,7 +79,7 @@ class FileStoreImplement(BaseStore):
                 for item in items:
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-        await anyio.to_thread.run_sync(_sync_write_jsonl)
+        await anyio.to_thread.run_sync(_sync_write_jsonl)  # type: ignore[attr-defined]
 
     async def _write_csv(self, path: Path, items: list[dict]):
         def _sync_write_csv():
@@ -103,7 +103,7 @@ class FileStoreImplement(BaseStore):
                     writer.writeheader()
                 writer.writerows(flattened)
 
-        await anyio.to_thread.run_sync(_sync_write_csv)
+        await anyio.to_thread.run_sync(_sync_write_csv)  # type: ignore[attr-defined]
 
     async def _write_json(self, path: Path, items: list[dict]):
         def _sync_write_json():
@@ -119,7 +119,7 @@ class FileStoreImplement(BaseStore):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
-        await anyio.to_thread.run_sync(_sync_write_json)
+        await anyio.to_thread.run_sync(_sync_write_json)  # type: ignore[attr-defined]
 
     async def _write_excel(self, path: Path, items: list[dict]):
         def _sync_write_excel():
@@ -146,7 +146,7 @@ class FileStoreImplement(BaseStore):
             except ImportError:
                 logger.error("pandas/openpyxl not installed for Excel export")
 
-        await anyio.to_thread.run_sync(_sync_write_excel)
+        await anyio.to_thread.run_sync(_sync_write_excel)  # type: ignore[attr-defined]
 
     async def close(self):
         pass

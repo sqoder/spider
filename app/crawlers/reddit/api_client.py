@@ -13,6 +13,7 @@ from scrapling import Fetcher
 
 from app.core.config import get_settings
 from app.core.exceptions import CrawlError, RateLimitExceededError
+from app.core.proxy_manager import proxy_manager
 
 
 class RedditAPIClient:
@@ -40,9 +41,7 @@ class RedditAPIClient:
             self.base_url = "https://www.reddit.com"
             # Use a robust browser User-Agent to prevent 429/403 blocks in public mode
             self.user_agent = (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
             )
             logger.info(
                 "[Reddit] No credentials found. Automatically falling back to Public Scraper (.json) mode!"
@@ -57,7 +56,8 @@ class RedditAPIClient:
         self._last_request_time: float = 0.0
 
         # Scrapling Fetcher initialization
-        self._fetcher = Fetcher(
+        self._fetcher = Fetcher()
+        self._fetcher.configure(
             user_agent=self.user_agent,
             timeout=30000,  # Scrapling uses ms
         )
@@ -71,16 +71,17 @@ class RedditAPIClient:
 
         try:
             # Using temporary fetcher for auth to avoid messing with main fetcher headers
-            auth_fetcher = Fetcher(timeout=15000)
+            auth_fetcher = Fetcher()
+            auth_fetcher.configure(timeout=15000)
             response = auth_fetcher.post(
                 self.AUTH_URL,
-                auth=(self.client_id, self.client_secret),
+                auth=(self.client_id, self.client_secret),  # type: ignore[arg-type]
                 data={"grant_type": "client_credentials"},
                 headers={"User-Agent": self.user_agent},
             )
 
-            if response.status_code != 200:
-                logger.error(f"[Reddit] Authentication failed: {response.status_code}")
+            if response.status != 200:
+                logger.error(f"[Reddit] Authentication failed: {response.status}")
                 return
 
             data = response.json()
@@ -106,7 +107,7 @@ class RedditAPIClient:
             self._rate_limit_reset = time.time() + float(reset)
 
     async def _request(self, method: str, endpoint: str, params: dict | None = None) -> Any:
-        """Make an API request using Scrapling Fetcher."""
+        """Make an API request using Scrapling Fetcher with automatic proxy rotation and backoff."""
         await self._ensure_auth()
 
         # Check rate limits in OAuth mode
@@ -119,7 +120,7 @@ class RedditAPIClient:
             raise RateLimitExceededError("reddit", retry_after=int(wait_time))
 
         # Check rate limits in No-API mode (1.5s interval to avoid 429)
-        if not self.use_oauth:
+        if not self.use_oauth and not proxy_manager.enabled:
             elapsed = time.time() - self._last_request_time
             if elapsed < 1.5:
                 await asyncio.sleep(1.5 - elapsed)
@@ -134,41 +135,55 @@ class RedditAPIClient:
             else:
                 url = f"{url}.json"
 
-        headers = {}
+        headers = {"User-Agent": self.user_agent}
         if self.use_oauth and self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
 
-        max_retries = 3
+        max_retries = 5 if proxy_manager.enabled else 3
         for attempt in range(max_retries):
-            try:
-                # Scrapling Fetcher is synchronous in current version or provides async?
-                # Actually Scrapling Fetcher calls are usually blocking,
-                # but we are in an async context.
-                # Let's check if Scrapling has an async fetcher.
-                # If not, we run in executor.
+            proxy_url = None
+            if proxy_manager.enabled:
+                proxy_url = proxy_manager.get_proxy()
 
-                def _do_fetch():
-                    return self._fetcher.request(
-                        method=method, url=url, params=params, headers=headers
-                    )
+            try:
+                def _do_fetch(proxy_url=proxy_url):
+                    import httpx
+                    proxy = proxy_url if proxy_url else None
+                    with httpx.Client(proxy=proxy, timeout=30.0) as client:
+                        if method.upper() == "POST":
+                            res = client.post(url=url, data=params, headers=headers)
+                        else:
+                            res = client.get(url=url, params=params, headers=headers)
+                        res.status = res.status_code
+                        return res
 
                 response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
                 if self.use_oauth:
                     self._update_rate_limits(response)
 
-                if response.status_code == 429:
+                if response.status == 429:
+                    if proxy_manager.enabled and attempt < max_retries - 1:
+                        logger.warning(
+                            f"[Reddit] 429 Rate Limit hit. Rotating proxy IP and retrying (attempt {attempt + 1})."
+                        )
+                        if proxy_url:
+                            proxy_manager.remove_proxy(proxy_url)
+                        await asyncio.sleep(1)
+                        continue
                     retry_after = int(response.headers.get("Retry-After", 60))
                     raise RateLimitExceededError("reddit", retry_after=retry_after)
 
-                if response.status_code >= 400:
+                if response.status >= 400:
                     logger.warning(
-                        f"[Reddit] Request failed with {response.status_code}: {response.text[:100]}"
+                        f"[Reddit] Request failed with {response.status}: {response.text[:100]}"
                     )
-                    if attempt < max_retries - 1 and response.status_code >= 500:
+                    if attempt < max_retries - 1:
+                        if proxy_manager.enabled and proxy_url:
+                            proxy_manager.remove_proxy(proxy_url)
                         await asyncio.sleep(2**attempt)
                         continue
-                    response.raise_for_status()
+                    raise CrawlError("reddit", endpoint, f"HTTP {response.status}")
 
                 return response.json()
 
@@ -176,9 +191,12 @@ class RedditAPIClient:
                 if isinstance(e, RateLimitExceededError):
                     raise
                 if attempt < max_retries - 1:
+                    logger.warning(f"[Reddit] Attempt {attempt + 1} failed: {e}. Retrying...")
+                    if proxy_manager.enabled and proxy_url:
+                        proxy_manager.remove_proxy(proxy_url)
                     await asyncio.sleep(2**attempt)
                     continue
-                logger.error(f"[Reddit] Request error: {e}")
+                logger.error(f"[Reddit] Request error after {max_retries} attempts: {e}")
                 raise CrawlError("reddit", endpoint, str(e)) from e
 
     async def aclose(self):
@@ -196,6 +214,7 @@ class RedditAPIClient:
         time_filter: str = "all",
         limit: int = 25,
         after: str | None = None,
+        **kwargs
     ) -> dict:
         endpoint = f"/r/{subreddit}/search" if subreddit else "/search"
         params: dict = {
@@ -209,6 +228,7 @@ class RedditAPIClient:
         }
         if after:
             params["after"] = after
+        params.update(kwargs)
         return await self._request("GET", endpoint, params=params)
 
     # ------------------------------------------------------------------ subreddit
@@ -257,7 +277,22 @@ class RedditAPIClient:
     ) -> dict:
         # expansion of morechildren requires authenticated POST/GET usually
         if not self.use_oauth:
-            return {"json": {"data": {"things": []}}}
+            # Fallback for No-API public mode: fetch sub-trees using the comments endpoint
+            # We fetch the first few children to expand them safely without overloading
+            post_id = link_id.replace("t3_", "")
+            things = []
+            
+            for child_id in children[:5]:
+                try:
+                    resp = await self._request("GET", f"/r/all/comments/{post_id}/_/{child_id}", params={"sort": sort, "raw_json": 1})
+                    if isinstance(resp, list) and len(resp) >= 2:
+                        children_nodes = resp[1].get("data", {}).get("children", [])
+                        things.extend(children_nodes)
+                except Exception as e:
+                    logger.debug(f"[Reddit No-API] Failed to expand child comment {child_id}: {e}")
+            
+            return {"json": {"data": {"things": things}}}
+
         params = {
             "api_type": "json",
             "link_id": link_id,

@@ -34,33 +34,51 @@ class DbStoreImplement(BaseStore):
         post_repo = PostRepository(session)
         author_repo = AuthorRepository(session)
 
+        # 1. Gather all authors
+        author_schemas = []
+        author_map = {}  # local mapping to avoid creating duplicates in this batch
+        
         for item in items:
-            try:
-                # Handle Author first if present
-                author_id = None
-                author_data_raw = item.get("author")
-                if isinstance(author_data_raw, dict):
-                    author_source_id = author_data_raw.get("id") or author_data_raw.get("source_id")
-                    if not author_source_id:
-                        author_data_raw = None
-                if isinstance(author_data_raw, dict):
+            author_data_raw = item.get("author")
+            if isinstance(author_data_raw, dict):
+                author_source_id = author_data_raw.get("id") or author_data_raw.get("source_id")
+                if author_source_id and author_source_id not in author_map:
                     visible = item.get("visible_data") or {}
                     author_schema = AuthorCreate(
                         platform=self.platform,
-                        source_id=author_source_id,
+                        source_id=author_source_id,  # type: ignore[arg-type]
                         username=author_data_raw.get("username"),
                         display_name=author_data_raw.get("name"),
                         profile_url=author_data_raw.get("url"),
                         avatar_url=author_data_raw.get("avatar"),
                         visible_data=self._author_visible_data(visible),
                     )
-                    author = await author_repo.create_or_update(author_schema)
-                    author_id = author.id
+                    author_schemas.append(author_schema)
+                    author_map[author_source_id] = author_schema
 
-                # Handle Post
+        # 2. Bulk upsert authors
+        saved_authors = {}
+        if author_schemas:
+            try:
+                authors = await author_repo.bulk_create_or_update(author_schemas)
+                for a in authors:
+                    saved_authors[a.source_id] = a.id
+            except Exception as e:
+                logger.error(f"Failed to bulk store authors: {e}")
+
+        # 3. Gather posts and map author_ids
+        post_schemas = []
+        for item in items:
+            try:
+                author_data_raw = item.get("author")
+                author_id = None
+                if isinstance(author_data_raw, dict):
+                    author_source_id = author_data_raw.get("id") or author_data_raw.get("source_id")
+                    author_id = saved_authors.get(author_source_id)
+
                 post_schema = PostCreate(
                     platform=self.platform,
-                    source_id=item.get("source_id") or item.get("id"),
+                    source_id=item.get("source_id") or item.get("id"),  # type: ignore[arg-type]
                     author_id=author_id,
                     url=item.get("url"),
                     title=item.get("title"),
@@ -76,11 +94,16 @@ class DbStoreImplement(BaseStore):
                     raw_sources=item.get("raw_sources"),
                     capture_meta=item.get("capture_meta"),
                 )
-                await post_repo.create_or_update(post_schema)
+                post_schemas.append(post_schema)
             except Exception as e:
-                logger.error(f"Failed to store content in DB: {e}")
-
-        await session.commit()
+                logger.error(f"Failed to process content item for DB: {e}")
+                
+        # 4. Bulk upsert posts
+        if post_schemas:
+            try:
+                await post_repo.bulk_create_or_update(post_schemas)
+            except Exception as e:
+                logger.error(f"Failed to bulk store posts in DB: {e}")
 
     async def store_comment(self, post_id: str, items: list[dict]):
         session = await self._get_session()
@@ -93,11 +116,12 @@ class DbStoreImplement(BaseStore):
             logger.warning(f"Post {post_id} not found in DB. Skipping comments.")
             return
 
+        comment_schemas = []
         for item in items:
             try:
                 comment_schema = CommentCreate(
                     platform=self.platform,
-                    source_id=item.get("source_id") or item.get("id") or item.get("comment_id"),
+                    source_id=item.get("source_id") or item.get("id") or item.get("comment_id"),  # type: ignore[arg-type]
                     post_id=db_post.id,
                     author_name=item.get("author") or item.get("author_name"),
                     author_source_id=item.get("author_id") or item.get("author_source_id"),
@@ -111,16 +135,21 @@ class DbStoreImplement(BaseStore):
                     raw_sources=item.get("raw_sources"),
                     capture_meta=item.get("capture_meta"),
                 )
-                await comment_repo.create_or_update(comment_schema)
+                comment_schemas.append(comment_schema)
             except Exception as e:
-                logger.error(f"Failed to store comment in DB: {e}")
+                logger.error(f"Failed to process comment item for DB: {e}")
 
-        await session.commit()
+        if comment_schemas:
+            try:
+                await comment_repo.bulk_create(comment_schemas)
+            except Exception as e:
+                logger.error(f"Failed to bulk store comments in DB: {e}")
 
     async def store_creator(self, items: list[dict]):
         session = await self._get_session()
         author_repo = AuthorRepository(session)
 
+        author_schemas = []
         for item in items:
             try:
                 source_id = item.get("id") or item.get("source_id") or item.get("user_id")
@@ -136,11 +165,15 @@ class DbStoreImplement(BaseStore):
                     bio=item.get("description") or item.get("desc"),
                     visible_data=item.get("visible_data"),
                 )
-                await author_repo.create_or_update(author_schema)
+                author_schemas.append(author_schema)
             except Exception as e:
-                logger.error(f"Failed to store creator in DB: {e}")
+                logger.error(f"Failed to process creator item for DB: {e}")
 
-        await session.commit()
+        if author_schemas:
+            try:
+                await author_repo.bulk_create_or_update(author_schemas)
+            except Exception as e:
+                logger.error(f"Failed to bulk store creators in DB: {e}")
 
     async def close(self):
         if self._session:

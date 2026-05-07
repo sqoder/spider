@@ -39,6 +39,8 @@ line-ending = "auto"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+venvPath = "."
+venv = "venv"
 include = ["app", "tests"]
 exclude = [
   "venv",

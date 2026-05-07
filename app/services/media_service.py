@@ -10,45 +10,59 @@ from scrapling import Fetcher
 class MediaService:
     def __init__(self, output_dir: str = "output"):
         self.output_dir = Path(output_dir)
-        self._run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        from app.core.config import get_settings
+        self._run_timestamp = get_settings().run_timestamp
 
     def get_run_timestamp(self) -> str:
         return self._run_timestamp
 
     async def download_youtube(self, url: str, source_id: str, quality: int = 360) -> None:
-        """用 yt-dlp 下载 YouTube 视频 + 缩略图。"""
         media_dir = self.output_dir / "youtube" / self._run_timestamp / "media" / source_id
         media_dir.mkdir(parents=True, exist_ok=True)
+        import os
+        from app.core.config import get_settings
+        settings = get_settings()
+        cookie_args = []
+        if settings.youtube_cookies_file and os.path.exists(settings.youtube_cookies_file):
+            cookie_args = ["--cookies", settings.youtube_cookies_file]
 
-        # 缩略图 + info.json
+        media_types_list = [t.strip().lower() for t in settings.media_types.split(",") if t.strip()]
+
+        # 缩略图 + info.json + 字幕 (中英文)
+        meta_args = ["--write-info-json"]
+        if "image" in media_types_list:
+            meta_args.extend(["--write-thumbnail", "--convert-thumbnails", "jpg"])
+        if "subtitle" in media_types_list:
+            meta_args.extend(["--write-subs", "--write-auto-subs", "--sub-langs", "en,zh-Hans,zh-Hant"])
+
         proc = await asyncio.create_subprocess_exec(
             "yt-dlp",
-            "--write-thumbnail",
-            "--convert-thumbnails",
-            "jpg",
-            "--write-info-json",
+            *meta_args,
             "--skip-download",
             "--no-playlist",
             "-o",
             str(media_dir / "video"),
+            *cookie_args,
             url,
         )
         await proc.wait()
 
         # 视频本体
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp",
-            "-f",
-            f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]",
-            "--merge-output-format",
-            "mp4",
-            "--no-playlist",
-            "--ignore-errors",
-            "-o",
-            str(media_dir / "video.%(ext)s"),
-            url,
-        )
-        await proc.wait()
+        if "video" in media_types_list:
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp",
+                "-f",
+                f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]",
+                "--merge-output-format",
+                "mp4",
+                "--no-playlist",
+                "--ignore-errors",
+                "-o",
+                str(media_dir / "video.%(ext)s"),
+                *cookie_args,
+                url,
+            )
+            await proc.wait()
 
         for f in sorted(media_dir.iterdir()):
             logger.info(f"      {f.name}  ({f.stat().st_size / 1024:.1f} KB)")
@@ -162,7 +176,7 @@ class MediaService:
                 except Exception as e:
                     logger.debug(f"Error downloading Instagram media {murl}: {e}")
 
-    async def download_reddit(self, media_list: list, source_id: str, post_url: str = None) -> None:
+    async def download_reddit(self, media_list: list, source_id: str, post_url: str | None = None) -> None:
         """使用 Scrapling Fetcher 下载 Reddit 帖子中的图片和图集媒体，如果是视频则用 yt-dlp 下载。"""
         if not media_list:
             logger.info("      无可用媒体链接")
@@ -197,7 +211,7 @@ class MediaService:
             except Exception as e:
                 logger.debug(f"yt-dlp download failed: {e}")
 
-        # 用 Scrapling 下载常规图片 / 图集
+        # 用 httpx 下载常规图片 / 图集
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -205,7 +219,6 @@ class MediaService:
                 "Chrome/120.0.0.0 Safari/537.36"
             )
         }
-        fetcher = Fetcher(headers=headers, timeout=30000)
 
         idx = 1
         for m in media_list:
@@ -227,7 +240,9 @@ class MediaService:
             try:
 
                 def _do_fetch(murl=murl):
-                    return fetcher.get(murl)
+                    import httpx
+                    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                        return client.get(murl, headers=headers)
 
                 resp = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
                 if resp.status_code == 200:

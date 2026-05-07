@@ -54,7 +54,7 @@ async def run_login():
             context = await p.chromium.launch_persistent_context(
                 user_data_dir,
                 headless=False,  # Must be False for interaction
-                proxy=proxy,
+                proxy=proxy,  # type: ignore[arg-type]
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
                 viewport={"width": 1280, "height": 720},
             )
@@ -85,7 +85,7 @@ async def run_login():
             while True:
                 cookies = await context.cookies()
                 # SID is the most critical authentication cookie for Google
-                has_auth = any(c["name"] == "SID" for c in cookies)
+                has_auth = any(c.get("name") == "SID" for c in cookies)
 
                 if has_auth and ("youtube.com" in page.url or "google.com" in page.url):
                     logger.info("Login detected! Capturing cookies...")

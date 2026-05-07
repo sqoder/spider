@@ -16,13 +16,16 @@ class BrowserManager:
     """
 
     _instance: Optional["BrowserManager"] = None
+    _fetchers: list[StealthyFetcher]
+    _cookie_cache: dict[str, tuple[float, list[dict]]]
+    _semaphore: asyncio.Semaphore | None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._fetchers: list[StealthyFetcher] = []
-            cls._instance._cookie_cache: dict[str, tuple[float, list[dict]]] = {}
-            cls._instance._semaphore: asyncio.Semaphore | None = None
+            cls._instance._fetchers = []
+            cls._instance._cookie_cache = {}
+            cls._instance._semaphore = None
         return cls._instance
 
     def _get_semaphore(self) -> asyncio.Semaphore:
@@ -81,11 +84,19 @@ class BrowserManager:
             if cookies_file:
                 cookies = self._parse_cookies_file(cookies_file)
 
+            from app.core.proxy_manager import proxy_manager
+            proxy = kwargs.get("proxy") or proxy_manager.get_proxy()
+
             # Scrapling StealthyFetcher handles browser launch internally
             # We map some common playwright kwargs to Scrapling if needed
             fetcher = StealthyFetcher(
-                headless=kwargs.get("headless", True), proxy=kwargs.get("proxy"), **kwargs
+                headless=kwargs.get("headless", True), proxy=proxy, **kwargs
             )
+
+            # Save properties for recycling
+            fetcher._cookies_file = cookies_file  # type: ignore[attr-defined]
+            fetcher._action_count = 0  # type: ignore[attr-defined]
+            fetcher._max_actions = kwargs.get("max_actions", 500)  # type: ignore[attr-defined]
 
             if cookies:
                 # Scrapling fetchers can take cookies in initialization or via sessions
@@ -107,15 +118,32 @@ class BrowserManager:
         try:
             # Scrapling fetchers have a quit/close method usually
             if hasattr(fetcher, "quit"):
-                fetcher.quit()
+                fetcher.quit()  # type: ignore[attr-defined]
             elif hasattr(fetcher, "close"):
-                fetcher.close()
+                fetcher.close()  # type: ignore[attr-defined]
         except Exception as e:
             logger.warning(f"Failed to close fetcher: {e}")
         finally:
             if fetcher in self._fetchers:
                 self._fetchers.remove(fetcher)
             self._get_semaphore().release()
+
+    async def record_action(self, fetcher: StealthyFetcher) -> StealthyFetcher:
+        """
+        Record an action (like a page load, scroll, etc.) on the fetcher.
+        If the fetcher's action count exceeds its limit, automatically recycles it to prevent memory leaks.
+        """
+        if not hasattr(fetcher, "_action_count"):
+            fetcher._action_count = 0  # type: ignore[attr-defined]
+            fetcher._max_actions = 500  # type: ignore[attr-defined]
+
+        fetcher._action_count += 1  # type: ignore[attr-defined]
+        if fetcher._action_count >= fetcher._max_actions:  # type: ignore[attr-defined]
+            logger.info(f"StealthyFetcher reached action limit ({fetcher._max_actions}). Recycling context to prevent memory leaks...")  # type: ignore[attr-defined]
+            cookies_file = getattr(fetcher, "_cookies_file", None)
+            await self.close_fetcher(fetcher)
+            return await self.new_fetcher(cookies_file=cookies_file, max_actions=fetcher._max_actions)  # type: ignore[attr-defined]
+        return fetcher
 
     async def close_all(self) -> None:
         """Close all tracked fetchers."""
@@ -150,4 +178,4 @@ async def new_page_deprecated(cookies_file: str | None = None, **kwargs):
 
 
 browser_manager = BrowserManager()
-browser_manager.new_page = new_page_deprecated
+browser_manager.new_page = new_page_deprecated  # type: ignore[attr-defined]

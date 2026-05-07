@@ -244,30 +244,74 @@ class RedditCrawler(BaseCrawler):
     # ────────────────────────────────────────────────── public interface
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
-        """Search Reddit posts by keyword with full metadata."""
+        """Search Reddit posts by keyword with full metadata. Uses time-slicing for massive data retrieval."""
         await self._rate_limit()
         logger.info(f"[Reddit] Search: '{keyword}', limit={limit}")
 
+        if limit <= 100:
+            # Quick standard search for low limits
+            return await self._search_batch(keyword, limit)
+
+        # Time-sliced search for high-concurrency / massive data ingestion
+        import time
+        now = int(time.time())
+        day_seconds = 86400
+        
+        # We slice into weekly segments (7 days) going backwards in time
+        slice_days = 7
+        slice_seconds = slice_days * day_seconds
+        current_end = now
+        total_slices = 24  # Look back up to ~6 months
+        
+        results: list[CrawlResult] = []
+        for _ in range(total_slices):
+            if len(results) >= limit:
+                break
+                
+            current_start = current_end - slice_seconds
+            time_query = f"{keyword} timestamp:{current_start}..{current_end}"
+            logger.info(f"[Reddit Slicer] Searching slice {current_start} to {current_end} ({slice_days} days)")
+            
+            slice_limit = min(limit - len(results), 500)
+            slice_results = await self._search_batch(time_query, slice_limit, syntax="cloudsearch")
+            results.extend(slice_results)
+            
+            current_end = current_start
+            
+            # Simple break if we have reached limit
+            if not slice_results and len(results) == 0:
+                # If we get absolutely nothing in the most recent slice, let's keep looking back slightly
+                # but if we get nothing after multiple iterations, we can safely break.
+                continue
+
+        logger.info(f"[Reddit Slicer] Completed search, gathered {len(results)} total results")
+        return results[:limit]
+
+    async def _search_batch(self, query: str, limit: int, **kwargs) -> list[CrawlResult]:
+        """Perform a single standard search batch with pagination."""
         results: list[CrawlResult] = []
         after: str | None = None
         remaining = limit
 
         while remaining > 0:
             batch = min(remaining, 100)
-            response = await self.api.search(query=keyword, limit=batch, after=after)
-            data = response.get("data", {})
-            children = data.get("children", [])
-            if not children:
-                break
-            for child in children:
-                results.append(await self._parse_post(child.get("data", {}), fetch_extras=False))
-            remaining -= len(children)
-            after = data.get("after")
-            if not after:
+            try:
+                response = await self.api.search(query=query, limit=batch, after=after, **kwargs)
+                data = response.get("data", {})
+                children = data.get("children", [])
+                if not children:
+                    break
+                for child in children:
+                    results.append(await self._parse_post(child.get("data", {}), fetch_extras=False))
+                remaining -= len(children)
+                after = data.get("after")
+                if not after:
+                    break
+            except Exception as e:
+                logger.error(f"[Reddit Slicer] Search batch failed: {e}")
                 break
 
-        logger.info(f"[Reddit] Search returned {len(results)} results")
-        return results[:limit]
+        return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get all posts from a Reddit user with full metadata."""
@@ -719,4 +763,4 @@ class RedditCrawler(BaseCrawler):
     # ────────────────────────────────────────────────── lifecycle
 
     async def close(self) -> None:
-        await self.api.close()
+        await self.api.aclose()

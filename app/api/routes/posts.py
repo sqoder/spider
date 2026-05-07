@@ -36,7 +36,7 @@ async def list_posts(
     items, total = await repo.list_posts(
         platform=platform, post_type=post_type, limit=page_size, offset=offset
     )
-    return PostListOut(items=items, total=total, page=page, page_size=page_size)
+    return PostListOut(items=items, total=total, page=page, page_size=page_size)  # type: ignore[arg-type]
 
 
 @router.get("/{post_id}", response_model=PostOut)

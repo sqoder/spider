@@ -55,6 +55,8 @@ class CrawlService:
 
             if download_media:
                 for item in results:
+                    if not item.url:
+                        continue
                     try:
                         await self._download_platform_media(
                             platform, item.url, item.source_id, item.to_dict()
@@ -100,11 +102,15 @@ class CrawlService:
 
             if download_media:
                 try:
-                    await self._download_platform_media(
-                        platform, url, result.source_id, result_dict
-                    )
+                    from app.workers.crawler_worker import download_media as celery_download
+                    if callable(getattr(celery_download, "delay", None)):
+                        celery_download.delay(platform, url, result.source_id)
+                    else:
+                        await self._download_platform_media(
+                            platform, url, result.source_id, result_dict
+                        )
                 except Exception as e:
-                    logger.warning(f"Failed to download media for {url}: {e}")
+                    logger.warning(f"Failed to queue/download media for {url}: {e}")
 
             return CrawlDetailResponse(
                 platform=platform,
@@ -118,7 +124,10 @@ class CrawlService:
         self, platform: str, url: str, source_id: str, data: dict
     ) -> None:
         if platform == "youtube":
-            await self._media_service.download_youtube(url, source_id)
+            from app.core.config import get_settings
+            await self._media_service.download_youtube(
+                url, source_id, quality=get_settings().media_quality
+            )
         elif platform == "tiktok":
             await self._media_service.download_tiktok(url, source_id)
         elif platform == "x":

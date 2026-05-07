@@ -32,7 +32,7 @@ async def list_tasks(
     items, total = await repo.list_tasks(
         platform=platform, status=status, limit=page_size, offset=offset
     )
-    return TaskListOut(items=items, total=total, page=page, page_size=page_size)
+    return TaskListOut(items=items, total=total, page=page, page_size=page_size)  # type: ignore[arg-type]
 
 
 @router.get("/{task_id}", response_model=TaskOut)

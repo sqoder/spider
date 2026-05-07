@@ -36,6 +36,45 @@ class AuthorRepository:
         await self.db.refresh(author)
         return author
 
+    async def bulk_create_or_update(self, items: list[AuthorCreate]) -> list[Author]:
+        """Upsert multiple authors using a single query per platform and a single commit."""
+        if not items:
+            return []
+
+        platform_ids = {}
+        for item in items:
+            platform_ids.setdefault(item.platform, []).append(item.source_id)
+
+        existing_authors = {}
+        for platform, source_ids in platform_ids.items():
+            stmt = select(Author).where(Author.platform == platform, Author.source_id.in_(source_ids))
+            result = await self.db.execute(stmt)
+            for a in result.scalars().all():
+                existing_authors[(a.platform, a.source_id)] = a
+
+        results = []
+        new_authors = []
+        for item in items:
+            key = (item.platform, item.source_id)
+            if key in existing_authors:
+                author = existing_authors[key]
+                update_data = item.model_dump(exclude_unset=True)
+                for k, v in update_data.items():
+                    if v is not None:
+                        setattr(author, k, v)
+                results.append(author)
+            else:
+                author = Author(**item.model_dump())
+                new_authors.append(author)
+                results.append(author)
+                existing_authors[key] = author
+
+        if new_authors:
+            self.db.add_all(new_authors)
+            
+        await self.db.commit()
+        return results
+
     async def get_by_id(self, author_id: int) -> Author | None:
         return await self.db.get(Author, author_id)
 

@@ -193,8 +193,7 @@ class TikTokCrawler(BaseCrawler):
 
         return CommentResult(
             platform="tiktok",
-            comment_id=cid,
-            post_id=post_id,
+            source_id=cid,
             parent_comment_id=str(data.get("reply_id", ""))
             if data.get("reply_id") != "0"
             else None,
@@ -202,9 +201,7 @@ class TikTokCrawler(BaseCrawler):
             author_id=str(user.get("uid", "")),
             author_name=user.get("nickname", ""),
             author_username=user.get("unique_id", ""),
-            author_avatar=user.get("avatar_thumb", {}).get("url_list", [""])[0]
-            if user.get("avatar_thumb")
-            else None,
+
             like_count=data.get("digg_count", 0),
             reply_count=data.get("reply_comment_total", 0),
             published_at=published_at,

@@ -39,10 +39,22 @@ class InstagramCrawler(BaseCrawler):
         return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get posts from an Instagram user's public profile using Scrapling Fetcher."""
+        """Get posts from an Instagram user's public profile using Scrapling Fetcher with Proxy and Account Pool."""
         await self._rate_limit()
         username = username.lstrip("@")
         logger.info(f"Instagram user posts: '{username}', limit={limit}")
+
+        from app.core.account_manager import account_manager
+        from app.core.proxy_manager import proxy_manager
+
+        proxy = proxy_manager.get_proxy()
+        fetcher = Fetcher(
+            timeout=30000,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+            proxy=proxy,
+        )
 
         url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
         headers = {
@@ -50,15 +62,31 @@ class InstagramCrawler(BaseCrawler):
             "Referer": f"https://www.instagram.com/{username}/",
         }
 
+        account_cookie = await account_manager.get_healthy_cookie_for_platform("instagram")
+        if account_cookie and account_cookie.get("cookies_data"):
+            cookies_dict = account_cookie.get("cookies_data")
+            if isinstance(cookies_dict, dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                headers["Cookie"] = cookie_str
+            elif isinstance(cookies_dict, list):
+                # Netscape or list of dicts format
+                cookie_str = "; ".join([f"{c.get('name')}={c.get('value')}" for c in cookies_dict if isinstance(c, dict)])
+                headers["Cookie"] = cookie_str
+
         try:
 
             def _do_fetch():
-                return self._fetcher.get(url, headers=headers)
+                return fetcher.get(url, headers=headers)
 
             response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
             if response.status != 200:
                 logger.warning(f"Instagram API failed with status {response.status}")
+                if account_cookie:
+                    if response.status == 429:
+                        await account_manager.report_account_rate_limited(account_cookie["account_id"])
+                    elif response.status in (401, 403):
+                        await account_manager.report_account_failed(account_cookie["account_id"])
                 return []
 
             data = response.json()

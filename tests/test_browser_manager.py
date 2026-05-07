@@ -28,15 +28,15 @@ async def test_close_fetcher_releases_slot(monkeypatch):
     manager._semaphore = None
 
     fake = FakeFetcher()
-    manager._fetchers.append(fake)
+    manager._fetchers.append(fake)  # type: ignore[arg-type]
     await manager._get_semaphore().acquire()
 
     assert manager._get_semaphore()._value == 0
 
-    await manager.close_fetcher(fake)
+    await manager.close_fetcher(fake)  # type: ignore[arg-type]
 
     assert fake.quit_called is True
-    assert fake not in manager._fetchers
+    assert fake not in manager._fetchers  # type: ignore[comparison-overlap]
     assert manager._get_semaphore()._value == 1
 
 

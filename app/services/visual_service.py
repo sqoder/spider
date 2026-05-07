@@ -14,7 +14,6 @@ class VisualService:
 
     def __init__(self, output_dir: str = "data/visual"):
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_word_cloud(self, text: str, output_filename: str) -> Path | None:
         """
@@ -60,6 +59,7 @@ class VisualService:
             wc.generate(processed_text)
 
             # Save
+            self.output_dir.mkdir(parents=True, exist_ok=True)
             output_path = self.output_dir / output_filename
             wc.to_file(str(output_path))
 

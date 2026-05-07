@@ -35,11 +35,55 @@ class CommentRepository:
         await self.db.refresh(comment)
         return comment
 
-    async def bulk_create(self, items: list[CommentCreate]) -> list[Comment]:
+    async def bulk_create(self, items: list[CommentCreate], chunk_size: int = 500) -> list[Comment]:
+        """Upsert multiple comments in safe, optimized chunks to prevent DB bottlenecks."""
+        if not items:
+            return []
+
         results = []
-        for data in items:
-            comment = await self.create_or_update(data)
-            results.append(comment)
+        for i in range(0, len(items), chunk_size):
+            chunk = items[i : i + chunk_size]
+            chunk_results = await self._bulk_create_chunk(chunk)
+            results.extend(chunk_results)
+        return results
+
+    async def _bulk_create_chunk(self, items: list[CommentCreate]) -> list[Comment]:
+        """Upsert a single chunk of comments."""
+        if not items:
+            return []
+
+        platform_ids = {}
+        for item in items:
+            platform_ids.setdefault(item.platform, []).append(item.source_id)
+
+        existing_comments = {}
+        for platform, source_ids in platform_ids.items():
+            stmt = select(Comment).where(Comment.platform == platform, Comment.source_id.in_(source_ids))
+            result = await self.db.execute(stmt)
+            for c in result.scalars().all():
+                existing_comments[(c.platform, c.source_id)] = c
+
+        results = []
+        new_comments = []
+        for item in items:
+            key = (item.platform, item.source_id)
+            if key in existing_comments:
+                comment = existing_comments[key]
+                update_data = item.model_dump(exclude_unset=True)
+                for k, v in update_data.items():
+                    if v is not None:
+                        setattr(comment, k, v)
+                results.append(comment)
+            else:
+                comment = Comment(**item.model_dump())
+                new_comments.append(comment)
+                results.append(comment)
+                existing_comments[key] = comment
+
+        if new_comments:
+            self.db.add_all(new_comments)
+            
+        await self.db.commit()
         return results
 
     async def get_by_id(self, comment_id: int) -> Comment | None:

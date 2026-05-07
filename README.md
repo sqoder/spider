@@ -6,8 +6,6 @@ A robust, multi-platform media crawler that unifies data from YouTube, Reddit, T
 
 This project provides a unified orchestration layer for crawling social media content. It routes all execution (API, CLI, Workers) through a shared service layer to ensure consistent behavior across different execution models.
 
-**Note:** `docs/superpowers/` contains historical planning artifacts and implementation history for agentic workers. These are not intended as user-facing documentation.
-
 ## 📦 Supported Setup Paths
 
 ### Mode 1: Simple Mode (Local SQLite + File Export)

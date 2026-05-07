@@ -39,12 +39,59 @@ class PostRepository:
         await self.db.refresh(post)
         return post
 
-    async def bulk_create_or_update(self, items: list[PostCreate]) -> list[Post]:
-        """Upsert multiple posts. Returns list of saved Post objects."""
+    async def bulk_create_or_update(self, items: list[PostCreate], chunk_size: int = 500) -> list[Post]:
+        """Upsert multiple posts in safe, optimized chunks to prevent DB bottlenecks."""
+        if not items:
+            return []
+
         results = []
-        for data in items:
-            post = await self.create_or_update(data)
-            results.append(post)
+        for i in range(0, len(items), chunk_size):
+            chunk = items[i : i + chunk_size]
+            chunk_results = await self._bulk_create_or_update_chunk(chunk)
+            results.extend(chunk_results)
+        return results
+
+    async def _bulk_create_or_update_chunk(self, items: list[PostCreate]) -> list[Post]:
+        """Upsert a single chunk of posts."""
+        if not items:
+            return []
+
+        # 1. Group source_ids by platform
+        platform_ids = {}
+        for item in items:
+            platform_ids.setdefault(item.platform, []).append(item.source_id)
+
+        # 2. Fetch existing posts
+        existing_posts = {}
+        for platform, source_ids in platform_ids.items():
+            stmt = select(Post).where(Post.platform == platform, Post.source_id.in_(source_ids))
+            result = await self.db.execute(stmt)
+            for p in result.scalars().all():
+                existing_posts[(p.platform, p.source_id)] = p
+
+        # 3. Update existing or create new
+        results = []
+        new_posts = []
+        for item in items:
+            key = (item.platform, item.source_id)
+            if key in existing_posts:
+                post = existing_posts[key]
+                update_data = item.model_dump(exclude_unset=True)
+                for k, v in update_data.items():
+                    if v is not None:
+                        setattr(post, k, v)
+                results.append(post)
+            else:
+                post = Post(**item.model_dump())
+                new_posts.append(post)
+                results.append(post)
+                existing_posts[key] = post  # prevent duplicates within the batch
+
+        # 4. Save and commit
+        if new_posts:
+            self.db.add_all(new_posts)
+            
+        await self.db.commit()
         return results
 
     async def get_by_id(self, post_id: int) -> Post | None:

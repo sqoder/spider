@@ -76,30 +76,57 @@ class XCrawler(BaseCrawler):
             return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get tweets from a user's profile using the login-free Syndication API via Scrapling Fetcher."""
+        """Get tweets from a user's profile using the login-free Syndication API with Proxy and Account Pool."""
         await self._rate_limit()
         username = username.lstrip("@")
         logger.info(f"X user posts: '{username}', limit={limit}")
+
+        from app.core.account_manager import account_manager
+        from app.core.proxy_manager import proxy_manager
+
+        proxy = proxy_manager.get_proxy()
+        fetcher = Fetcher(
+            timeout=30000,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+            proxy=proxy,
+        )
 
         url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
 
+        account_cookie = await account_manager.get_healthy_cookie_for_platform("x")
+        if account_cookie and account_cookie.get("cookies_data"):
+            cookies_dict = account_cookie.get("cookies_data")
+            if isinstance(cookies_dict, dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                headers["Cookie"] = cookie_str
+            elif isinstance(cookies_dict, list):
+                cookie_str = "; ".join([f"{c.get('name')}={c.get('value')}" for c in cookies_dict if isinstance(c, dict)])
+                headers["Cookie"] = cookie_str
+
         try:
 
             def _do_fetch():
-                return self._fetcher.get(url, headers=headers)
+                return fetcher.get(url, headers=headers)
 
             response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
-            if response.status_code != 200:
-                logger.warning(f"X syndication API failed with status {response.status_code}")
+            if response.status_code != 200:  # type: ignore[attr-defined]
+                logger.warning(f"X syndication API failed with status {response.status_code}")  # type: ignore[attr-defined]
+                if account_cookie:
+                    if response.status_code == 429:  # type: ignore[attr-defined]
+                        await account_manager.report_account_rate_limited(account_cookie["account_id"])
+                    elif response.status_code in (401, 403):  # type: ignore[attr-defined]
+                        await account_manager.report_account_failed(account_cookie["account_id"])
                 return []
 
             # Parse the NEXT_DATA JSON blob
             match = re.search(
-                r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text
+                r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text  # type: ignore[attr-defined]
             )
             if not match:
                 logger.warning(f"Could not find timeline data for user {username}")
@@ -219,7 +246,7 @@ class XCrawler(BaseCrawler):
 
         return CrawlResult(
             platform="x",
-            source_id=tid,
+            source_id=tid,  # type: ignore[arg-type]
             url=f"https://x.com/{author_username}/status/{tid}",
             title=None,
             content=text,

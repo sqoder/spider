@@ -44,7 +44,7 @@ if celery_app is not None:
         default_retry_delay=60,
         acks_late=True,
     )
-    def execute_crawl_task(self, task_id: int):
+    def execute_crawl_task(self, task_id: int):  # type: ignore[reportRedeclaration]
         """
         Execute a crawl task by ID.
         Reads task params from DB, runs the crawler, and saves results.
@@ -62,6 +62,7 @@ if celery_app is not None:
         name="app.workers.crawler_worker.download_media",
         max_retries=2,
         default_retry_delay=120,
+        queue="media_download",
     )
     def download_media(platform: str, url: str, source_id: str):
         """Download media for a specific post."""
@@ -75,11 +76,11 @@ else:
     # Celery disabled: provide no-op stubs so imports don't break
     logger.info("Celery disabled — background crawl tasks not available")
 
-    def execute_crawl_task(task_id: int):
+    def execute_crawl_task(task_id: int):  # type: ignore[misc]
         logger.warning(f"Cannot execute task {task_id}: Celery is disabled")
         return None
 
-    def download_media(platform: str, url: str, source_id: str):
+    def download_media(platform: str, url: str, source_id: str):  # type: ignore[misc]
         logger.warning(f"Cannot download media {platform}/{source_id}: Celery is disabled")
         return None
 
@@ -124,6 +125,7 @@ async def _store_task_results(task, results, comments_by_post, comment_repo=None
         db_post_id = (task.params or {}).get("db_post_id")
         comments = comments_by_post.get("comments", [])
         if db_post_id and comment_repo:
+            comment_schemas = []
             for c in comments:
                 comment_data = CommentCreate(
                     platform=c.platform,
@@ -141,7 +143,8 @@ async def _store_task_results(task, results, comments_by_post, comment_repo=None
                     raw_sources=c.raw_sources,
                     capture_meta=c.capture_meta,
                 )
-                await comment_repo.create_or_update(comment_data)
+                comment_schemas.append(comment_data)
+            await comment_repo.bulk_create(comment_schemas)
 
         # Also store via StoreFactory
         store = StoreFactory.create_store(task.platform, task.task_type)

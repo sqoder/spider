@@ -6,11 +6,15 @@ Uses pydantic-settings to load from environment variables and .env file.
 from functools import lru_cache
 from pathlib import Path
 
+from datetime import datetime
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Global application settings loaded from environment variables."""
+
+    # Unique timestamp for each execution run
+    run_timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -66,11 +70,13 @@ class Settings(BaseSettings):
     # ---- Media Storage ----
     media_storage_path: str = "./output"
     media_max_size_mb: int = 500
+    media_quality: int = 360
+    media_types: str = "video,image"
 
     # ---- YouTube ----
     youtube_api_key: str | None = None
     youtube_daily_quota: int = 10000
-    youtube_use_scraper: bool = True  # Default to True for "native crawler" preference
+    youtube_use_scraper: bool = False  # Default to False to use the highly stable yt-dlp backend
     youtube_cookies_file: str | None = None
     playwright_browser_count: int = 3
 

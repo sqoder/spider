@@ -34,7 +34,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         """Automatically click 'Accept All' on EU privacy popups."""
         try:
             # Scrapling adaptive find for consent button
-            button = fetcher.find_similar("Accept all", "button")
+            button = fetcher.find_similar("Accept all", "button")  # type: ignore[attr-defined]
             if button:
                 button.click()
                 await asyncio.sleep(1)
@@ -53,7 +53,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                 "ytd-button-renderer:has-text('Accept all')",
                 "form[action='https://consent.youtube.com/save'] button",
             ]
-            page = fetcher.page
+            page = fetcher.page  # type: ignore[attr-defined]
             for selector in selectors:
                 try:
                     # Wait briefly for the element
@@ -70,7 +70,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
 
     async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str):
         """Navigate to URL and handle consent popup."""
-        await fetcher.page.goto(url, wait_until="domcontentloaded")
+        await fetcher.page.goto(url, wait_until="domcontentloaded")  # type: ignore[attr-defined]
         await self._handle_consent(fetcher)
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
@@ -82,7 +82,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
 
         results = []
         try:
@@ -202,7 +202,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
 
         try:
             await self._goto_with_consent(fetcher, url)
@@ -368,7 +368,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
-        page = fetcher.page
+        page = fetcher.page  # type: ignore[attr-defined]
 
         results = []
         try:

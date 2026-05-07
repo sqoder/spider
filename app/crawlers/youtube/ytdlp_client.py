@@ -54,7 +54,7 @@ class YtdlpClient:
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
                 if process.returncode == 0 or stdout:
-                    return stdout, stderr, process.returncode
+                    return stdout, stderr, process.returncode or 0
 
                 error_msg = stderr.decode("utf-8", errors="replace").strip()
                 if attempt < retry_count:
@@ -194,7 +194,7 @@ class YtdlpClient:
         return json.loads(stdout.decode("utf-8"))
 
     async def extract_multiple_info(
-        self, url_or_query: str, limit: int = None
+        self, url_or_query: str, limit: int | None = None
     ) -> list[dict[str, Any]]:
         """Extract metadata for multiple items (search or playlist)."""
         cmd = [
