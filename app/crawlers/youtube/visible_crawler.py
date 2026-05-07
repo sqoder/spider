@@ -169,7 +169,10 @@ class VisibleYouTubeCrawler(BaseCrawler):
             await innertube.close()
 
         try:
-            info = await self.ytdlp.extract_info_with_comments(f"{YOUTUBE_ORIGIN}/watch?v={video_id}")
+            info = await self.ytdlp.extract_comments_info(
+                f"{YOUTUBE_ORIGIN}/watch?v={video_id}",
+                max_comments=limit,
+            )
             raw_comments = info.get("comments") or []
             if raw_comments:
                 return [
@@ -447,7 +450,11 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _goto_with_consent(self, page: Page, url: str) -> None:
         await page.goto(url, wait_until="domcontentloaded")
         await self._handle_consent(page)
-        await page.wait_for_load_state("networkidle", timeout=10000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            # networkidle timeout is non-fatal — continue with whatever loaded
+            pass
 
     async def _handle_consent(self, page: Page) -> None:
         selectors = [

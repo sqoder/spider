@@ -10,19 +10,31 @@ from loguru import logger
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
+
+def _parse_upload_date(dt_str: Optional[str]) -> Optional[datetime]:
+    """Parse YYYYMMDD strings returned by yt-dlp into datetime objects."""
+    if not dt_str:
+        return None
+    try:
+        if len(dt_str) == 8 and dt_str.isdigit():
+            return datetime.strptime(dt_str, "%Y%m%d")
+    except (ValueError, TypeError):
+        pass
+    return None
+
 class YtdlpYouTubeCrawler(BaseCrawler):
     platform = "youtube"
 
     def __init__(self):
         super().__init__()
         self.ytdlp = YtdlpClient()
-        self._pw_crawler = None
+        self._visible_crawler = None
 
-    def _get_pw_crawler(self):
-        if self._pw_crawler is None:
-            from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
-            self._pw_crawler = PlaywrightYouTubeCrawler()
-        return self._pw_crawler
+    def _get_visible_crawler(self):
+        if self._visible_crawler is None:
+            from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+            self._visible_crawler = VisibleYouTubeCrawler()
+        return self._visible_crawler
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         await self._rate_limit()
@@ -51,10 +63,10 @@ class YtdlpYouTubeCrawler(BaseCrawler):
         return self._parse_info(info)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
-        """Fetch comments using Playwright as a helper for the native scraper mode."""
+        """Fetch comments using the visible-first crawler's multi-tier strategy."""
         await self._rate_limit()
-        logger.info(f"[Scraper] Fetching comments for {post_id} using Playwright helper")
-        return await self._get_pw_crawler().get_comments(post_id, limit)
+        logger.info(f"[Scraper] Fetching comments for {post_id} using visible helper")
+        return await self._get_visible_crawler().get_comments(post_id, limit)
 
     def _parse_info(self, info: dict) -> CrawlResult:
         url = info.get("original_url") or info.get("webpage_url") or f"https://www.youtube.com/watch?v={info.get('id')}"
@@ -96,20 +108,10 @@ class YtdlpYouTubeCrawler(BaseCrawler):
                     "subtitles": list(info.get("subtitles", {}).keys()) + list(info.get("automatic_captions", {}).keys())
                 }
             ],
-            published_at=self._parse_datetime(info.get("upload_date")),
+            published_at=_parse_upload_date(info.get("upload_date")),
             raw=info,
         )
 
-    def _parse_datetime(self, dt_str: Optional[str]) -> Optional[datetime]:
-        if not dt_str:
-            return None
-        try:
-            if len(dt_str) == 8 and dt_str.isdigit():
-                return datetime.strptime(dt_str, "%Y%m%d")
-        except (ValueError, TypeError):
-            pass
-        return None
-
     async def close(self) -> None:
-        if self._pw_crawler:
-            await self._pw_crawler.close()
+        if self._visible_crawler:
+            await self._visible_crawler.close()

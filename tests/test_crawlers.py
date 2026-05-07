@@ -4,9 +4,10 @@ Tests for the base crawler and factory pattern.
 
 import pytest
 
+from app.core.config import get_settings
 from app.core.exceptions import PlatformNotSupportedError
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
-from app.crawlers.factory import CrawlerFactory
+from app.crawlers.factory import CrawlerFactory, register_all_crawlers
 
 # ---- CrawlResult Tests ----
 
@@ -175,3 +176,39 @@ class TestCrawlerFactory:
 
         # Cleanup
         del CrawlerFactory._registry["mock"]
+
+    def test_youtube_scraper_true_uses_visible_crawler_without_api_key(self, monkeypatch):
+        monkeypatch.setenv("ENABLED_PLATFORMS", "youtube")
+        monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+        monkeypatch.setenv("YOUTUBE_USE_SCRAPER", "true")
+        get_settings.cache_clear()
+        CrawlerFactory._registry.clear()
+
+        register_all_crawlers()
+        crawler = CrawlerFactory.create("youtube")
+
+        assert crawler.__class__.__name__ == "VisibleYouTubeCrawler"
+
+    def test_youtube_scraper_false_without_api_key_uses_ytdlp_crawler(self, monkeypatch):
+        monkeypatch.setenv("ENABLED_PLATFORMS", "youtube")
+        monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+        monkeypatch.setenv("YOUTUBE_USE_SCRAPER", "false")
+        get_settings.cache_clear()
+        CrawlerFactory._registry.clear()
+
+        register_all_crawlers()
+        crawler = CrawlerFactory.create("youtube")
+
+        assert crawler.__class__.__name__ == "YtdlpYouTubeCrawler"
+
+    def test_youtube_scraper_false_with_api_key_uses_api_crawler(self, monkeypatch):
+        monkeypatch.setenv("ENABLED_PLATFORMS", "youtube")
+        monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+        monkeypatch.setenv("YOUTUBE_USE_SCRAPER", "false")
+        get_settings.cache_clear()
+        CrawlerFactory._registry.clear()
+
+        register_all_crawlers()
+        crawler = CrawlerFactory.create("youtube")
+
+        assert crawler.__class__.__name__ == "YouTubeCrawler"

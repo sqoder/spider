@@ -10,6 +10,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from loguru import logger
 from app.core.proxy_manager import proxy_manager
+from app.core.config import get_settings
 
 async def save_cookies_as_netscape(context, filepath):
     """Convert Playwright cookies to Netscape format for yt-dlp/Innertube."""
@@ -92,9 +93,12 @@ async def run_login():
             logger.error(f"Error during login detection: {e}")
             
         # 2. Save session states
-        cookies_txt = "youtube_cookies.txt"
-        state_json = "youtube_state.json"
-        
+        settings = get_settings()
+        # Respect configured path; fall back to project-root defaults
+        cookies_txt = settings.youtube_cookies_file or "youtube_cookies.txt"
+        # Derive a sibling .json state file from the cookies path
+        state_json = str(Path(cookies_txt).with_suffix(".json"))
+
         await save_cookies_as_netscape(context, cookies_txt)
         await context.storage_state(path=state_json)
         logger.info(f"Successfully saved Playwright state to {state_json}")

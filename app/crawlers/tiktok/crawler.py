@@ -12,6 +12,7 @@ from loguru import logger
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 from app.crawlers.tiktok.gallerydl_client import GalleryDLClient
+from app.crawlers.tiktok.playwright_client import PlaywrightTikTokClient
 
 
 class TikTokCrawler(BaseCrawler):
@@ -22,47 +23,67 @@ class TikTokCrawler(BaseCrawler):
     def __init__(self):
         super().__init__()
         self.gallery_dl = GalleryDLClient(platform="tiktok")
+        self.playwright = PlaywrightTikTokClient()
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """
-        Search TikTok videos by keyword.
-        Note: TikTok search via gallery-dl is limited. Uses tag/hashtag search as fallback.
+        Search TikTok videos by keyword using Playwright interception to bypass anti-crawler.
         """
         await self._rate_limit()
         logger.info(f"TikTok search: '{keyword}', limit={limit}")
 
-        # Try hashtag search via gallery-dl
-        tag = keyword.replace(" ", "").replace("#", "")
-        url = f"https://www.tiktok.com/tag/{tag}"
-
-        try:
-            items = await self.gallery_dl.extract_metadata(url)
-            results = []
-            for item in items[:limit]:
-                result = self._parse_tiktok_item(item)
-                if result:
-                    results.append(result)
-            return results
-        except Exception as e:
-            logger.warning(f"TikTok search fallback failed: {e}")
-            return []
+        items = await self.playwright.search_keyword(keyword, limit=limit)
+        results = []
+        for item in items:
+            parsed = self._parse_playwright_item(item)
+            if parsed:
+                results.append(parsed)
+                
+        return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get videos from a TikTok user's profile."""
+        """Get videos from a TikTok user's profile using yt-dlp."""
         await self._rate_limit()
         logger.info(f"TikTok user posts: '{username}', limit={limit}")
 
         username = username.lstrip("@")
-        items = await self.gallery_dl.get_user_content(username, limit=limit)
+        url = f"https://www.tiktok.com/@{username}"
+        
+        import asyncio
+        import json
 
-        results = []
-        for item in items:
-            result = self._parse_tiktok_item(item)
-            if result:
-                results.append(result)
+        cmd = [
+            "yt-dlp",
+            "--dump-json",
+            "--no-download",
+            "--playlist-end", str(limit),
+            "--ignore-errors",
+            url
+        ]
 
-        logger.info(f"TikTok user posts returned {len(results)} results")
-        return results[:limit]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+
+            results = []
+            for line in stdout.decode("utf-8").split("\n"):
+                line = line.strip()
+                if line:
+                    try:
+                        info = json.loads(line)
+                        results.append(self._parse_ytdlp_item(info))
+                    except json.JSONDecodeError:
+                        continue
+
+            logger.info(f"TikTok user posts returned {len(results)} results")
+            return results[:limit]
+        except Exception as e:
+            logger.warning(f"TikTok user posts yt-dlp failed: {e}")
+            return []
 
     async def get_post_detail(self, url: str) -> CrawlResult:
         """Get detailed info for a single TikTok video."""
@@ -82,13 +103,113 @@ class TikTokCrawler(BaseCrawler):
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         """
-        Get comments for a TikTok video.
-        Note: Comments are not easily accessible without API. Returns empty for now.
+        Get comments for a TikTok video using Playwright.
         """
-        logger.warning("TikTok comments are not supported in Phase 1")
-        return []
+        await self._rate_limit()
+        
+        username = "tiktok"
+        video_id = post_id
+        if ":" in post_id:
+            username, video_id = post_id.split(":", 1)
+            
+        logger.info(f"TikTok get comments for video: {video_id} by @{username}")
+        
+        raw_comments = await self.playwright.get_comments(video_id, limit=limit, username=username)
+        results = []
+        for c in raw_comments:
+            parsed = self._parse_playwright_comment(c, post_id)
+            if parsed:
+                results.append(parsed)
+                
+        return results
 
     # ---- Private helpers ----
+
+    def _parse_playwright_item(self, data: dict) -> Optional[CrawlResult]:
+        if not data:
+            return None
+        
+        video_id = str(data.get("id", ""))
+        if not video_id:
+            return None
+            
+        author = data.get("author", {})
+        stats = data.get("stats", {})
+        video_info = data.get("video", {})
+        
+        username = author.get("uniqueId", "")
+        post_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+        
+        video_url = video_info.get("playAddr") or video_info.get("downloadAddr") or post_url
+        
+        published_at = None
+        create_time = data.get("createTime")
+        if create_time:
+            try:
+                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+                
+        return CrawlResult(
+            platform="tiktok",
+            source_id=video_id,
+            url=post_url,
+            title=data.get("desc", ""),
+            content=data.get("desc", ""),
+            content_type="video",
+            author_id=str(author.get("id", "")),
+            author_name=author.get("nickname", ""),
+            author_username=username,
+            author_url=f"https://www.tiktok.com/@{username}" if username else None,
+            like_count=stats.get("diggCount", 0),
+            comment_count=stats.get("commentCount", 0),
+            share_count=stats.get("shareCount", 0),
+            view_count=stats.get("playCount", 0),
+            media=[
+                {
+                    "type": "video",
+                    "url": video_url,
+                    "duration": video_info.get("duration", 0),
+                }
+            ],
+            thumbnail_url=video_info.get("cover"),
+            published_at=published_at,
+            raw=data,
+        )
+
+    def _parse_playwright_comment(self, data: dict, post_id: str) -> Optional[CommentResult]:
+        if not data:
+            return None
+        
+        cid = str(data.get("cid", ""))
+        if not cid:
+            return None
+            
+        user = data.get("user", {})
+        
+        published_at = None
+        create_time = data.get("create_time")
+        if create_time:
+            try:
+                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+                
+        return CommentResult(
+            platform="tiktok",
+            comment_id=cid,
+            post_id=post_id,
+            parent_comment_id=str(data.get("reply_id", "")) if data.get("reply_id") != "0" else None,
+            content=data.get("text", ""),
+            author_id=str(user.get("uid", "")),
+            author_name=user.get("nickname", ""),
+            author_username=user.get("unique_id", ""),
+            author_avatar=user.get("avatar_thumb", {}).get("url_list", [""])[0] if user.get("avatar_thumb") else None,
+            like_count=data.get("digg_count", 0),
+            reply_count=data.get("reply_comment_total", 0),
+            published_at=published_at,
+            raw=data
+        )
 
     def _parse_tiktok_item(self, data: dict) -> Optional[CrawlResult]:
         """Parse gallery-dl TikTok metadata into a CrawlResult."""
@@ -155,6 +276,45 @@ class TikTokCrawler(BaseCrawler):
             raw=data,
         )
 
+    def _parse_ytdlp_item(self, info: dict) -> CrawlResult:
+        """Parse yt-dlp json info into CrawlResult."""
+        url = info.get("webpage_url") or info.get("original_url") or ""
+        
+        published_at = None
+        ts = info.get("timestamp")
+        if ts:
+            try:
+                published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+                
+        return CrawlResult(
+            platform="tiktok",
+            source_id=info.get("id", ""),
+            url=url,
+            title=info.get("title", ""),
+            content=info.get("description", ""),
+            content_type="video",
+            author_id=info.get("uploader_id", ""),
+            author_name=info.get("uploader", ""),
+            author_username=info.get("uploader_id", ""),
+            author_url=info.get("uploader_url"),
+            like_count=info.get("like_count", 0) or 0,
+            comment_count=info.get("comment_count", 0) or 0,
+            share_count=info.get("repost_count", 0) or 0,
+            view_count=info.get("view_count", 0) or 0,
+            media=[
+                {
+                    "type": "video",
+                    "url": url,
+                    "duration": info.get("duration"),
+                }
+            ],
+            thumbnail_url=info.get("thumbnail"),
+            published_at=published_at,
+            raw=info,
+        )
+
     async def _get_detail_via_ytdlp(self, url: str) -> CrawlResult:
         """Fallback: get TikTok video details using yt-dlp."""
         import asyncio
@@ -173,31 +333,7 @@ class TikTokCrawler(BaseCrawler):
             raise ValueError(f"yt-dlp failed for {url}")
 
         info = json.loads(stdout.decode("utf-8"))
-
-        return CrawlResult(
-            platform="tiktok",
-            source_id=info.get("id", ""),
-            url=url,
-            title=info.get("title", ""),
-            content=info.get("description", ""),
-            content_type="video",
-            author_id=info.get("uploader_id", ""),
-            author_name=info.get("uploader", ""),
-            author_username=info.get("uploader_id", ""),
-            author_url=info.get("uploader_url"),
-            like_count=info.get("like_count", 0) or 0,
-            comment_count=info.get("comment_count", 0) or 0,
-            view_count=info.get("view_count", 0) or 0,
-            media=[
-                {
-                    "type": "video",
-                    "url": url,
-                    "duration": info.get("duration"),
-                }
-            ],
-            published_at=None,
-            raw=info,
-        )
+        return self._parse_ytdlp_item(info)
 
     async def close(self) -> None:
-        pass
+        await self.playwright.close()

@@ -94,6 +94,9 @@ class YouTubeAPIClient:
                 logger.error(f"YouTube API error after {retry_count} retries: {e}")
                 raise CrawlError("youtube", endpoint, str(e))
 
+        # Should never reach here, but guard against implicit None return
+        raise CrawlError("youtube", endpoint, "_request exited retry loop without result")
+
     async def search_videos(
         self,
         query: str,

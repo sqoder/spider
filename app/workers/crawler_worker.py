@@ -206,7 +206,10 @@ async def _execute_task_async(task_id: int):
                     if task.task_type in ("post_detail", "url_parse"):
                         try:
                             from app.workers.crawler_worker import download_media
-                            download_media.delay(task.platform, task.url, r.source_id)
+                            if callable(getattr(download_media, "delay", None)):
+                                download_media.delay(task.platform, task.url, r.source_id)
+                            else:
+                                logger.debug(f"Celery disabled — skipping async media download for {r.source_id}")
                         except Exception as e:
                             logger.error(f"Failed to queue media download for {r.source_id}: {e}")
             finally:

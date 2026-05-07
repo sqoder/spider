@@ -6,6 +6,8 @@ from typing import Optional, List, Dict, Tuple
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 from loguru import logger
 
+from app.core.config import get_settings
+
 class BrowserManager:
     _instance: Optional['BrowserManager'] = None
     _playwright: Optional[Playwright] = None
@@ -16,6 +18,9 @@ class BrowserManager:
             cls._instance = super(BrowserManager, cls).__new__(cls)
             cls._instance._contexts = []
             cls._instance._cookie_cache: Dict[str, Tuple[float, List[Dict]]] = {}
+            cls._instance._context_semaphore: Optional[asyncio.Semaphore] = None
+            cls._instance._context_semaphore_limit: Optional[int] = None
+            cls._instance._context_slots: set[int] = set()
         return cls._instance
 
     async def get_browser(self) -> Browser:
@@ -24,6 +29,14 @@ class BrowserManager:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(headless=True)
         return self._browser
+
+    def _get_context_semaphore(self) -> asyncio.Semaphore:
+        if self._context_semaphore is None:
+            settings = get_settings()
+            limit = max(1, settings.playwright_browser_count)
+            self._context_semaphore = asyncio.Semaphore(limit)
+            self._context_semaphore_limit = limit
+        return self._context_semaphore
 
     def _parse_cookies_file(self, filepath: str) -> List[Dict]:
         """Parse Netscape format cookies file into Playwright format. Results are cached by mtime."""
@@ -61,28 +74,54 @@ class BrowserManager:
         return cookies
 
     async def new_page(self, cookies_file: Optional[str] = None, **kwargs) -> Page:
-        browser = await self.get_browser()
+        semaphore = self._get_context_semaphore()
+        await semaphore.acquire()
+        context = None
 
-        cookies = []
-        if cookies_file:
-            cookies = self._parse_cookies_file(cookies_file)
+        try:
+            browser = await self.get_browser()
 
-        context = await browser.new_context(**kwargs)
-        self._contexts.append(context)
-        if cookies:
-            await context.add_cookies(cookies)
-            logger.info(f"Injected {len(cookies)} cookies into new context.")
-        return await context.new_page()
+            cookies = []
+            if cookies_file:
+                cookies = self._parse_cookies_file(cookies_file)
+
+            context = await browser.new_context(**kwargs)
+            self._contexts.append(context)
+            self._context_slots.add(id(context))
+            if cookies:
+                await context.add_cookies(cookies)
+                logger.info(f"Injected {len(cookies)} cookies into new context.")
+            return await context.new_page()
+        except Exception:
+            if context is not None:
+                try:
+                    await context.close()
+                except Exception as e:
+                    logger.warning(f"Failed to close browser context after setup error: {e}")
+                try:
+                    self._contexts.remove(context)
+                except ValueError:
+                    pass
+                self._context_slots.discard(id(context))
+            semaphore.release()
+            raise
 
     async def close_context(self, page: Page) -> None:
         """Close a page and its associated browser context."""
         context = page.context
-        await page.close()
-        await context.close()
         try:
-            self._contexts.remove(context)
-        except ValueError:
-            pass
+            try:
+                await page.close()
+            finally:
+                await context.close()
+        finally:
+            try:
+                self._contexts.remove(context)
+            except ValueError:
+                pass
+            if id(context) in self._context_slots:
+                self._context_slots.remove(id(context))
+                self._get_context_semaphore().release()
 
     async def close_all_contexts(self) -> None:
         """Close all tracked browser contexts."""
@@ -91,6 +130,10 @@ class BrowserManager:
                 await ctx.close()
             except Exception as e:
                 logger.warning(f"Failed to close browser context: {e}")
+            finally:
+                if id(ctx) in self._context_slots:
+                    self._context_slots.remove(id(ctx))
+                    self._get_context_semaphore().release()
         self._contexts.clear()
 
     async def close(self):

@@ -150,9 +150,42 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Mock implementation for demonstration."""
-        logger.warning("Playwright get_user_posts is mocked")
-        return []
+        """Get videos from a YouTube channel using yt-dlp as backend."""
+        await self._rate_limit()
+        handle = username if username.startswith("@") else f"@{username}"
+        url = f"https://www.youtube.com/{handle}/videos"
+        logger.info(f"[Playwright] Getting channel videos via yt-dlp: {url}")
+        try:
+            items = await self.ytdlp.extract_multiple_info(url, limit=limit)
+        except Exception as exc:
+            logger.warning(f"[Playwright] yt-dlp channel fetch failed: {exc}")
+            return []
+
+        results = []
+        for info in items[:limit]:
+            if not info.get("id"):
+                continue
+            video_url = (
+                info.get("original_url")
+                or info.get("webpage_url")
+                or f"https://www.youtube.com/watch?v={info['id']}"
+            )
+            results.append(
+                CrawlResult(
+                    platform="youtube",
+                    source_id=info.get("id", ""),
+                    url=video_url,
+                    title=info.get("title"),
+                    content=info.get("description"),
+                    content_type="video",
+                    author_name=info.get("channel"),
+                    author_username=info.get("uploader_id"),
+                    view_count=info.get("view_count", 0) or 0,
+                    thumbnail_url=info.get("thumbnail"),
+                    raw=info,
+                )
+            )
+        return results
 
     async def get_post_detail(self, url: str) -> CrawlResult:
         """Extract video details using Playwright by parsing ytInitialData."""
@@ -253,6 +286,8 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         """Extract comments with multi-tier fallbacks: Innertube -> yt-dlp -> Playwright."""
         await self._rate_limit()
         logger.info(f"[YouTube] Multi-tier comment extraction for: {post_id}")
+        # Build the video URL once so all tiers can use it
+        url = f"https://www.youtube.com/watch?v={post_id}"
 
         # Tier 1: yt-dlp (handles replies natively, most robust)
         try:
@@ -262,12 +297,18 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             ytdlp_comments = info.get("comments", [])
             # yt-dlp 成功返回的结果（包括空列表）直接使用，只有异常才走 Innertube 兜底
             results = []
+            seen_ids: set[str] = set()
             for c in ytdlp_comments[:limit]:
                 parent = c.get("parent", "")
                 parent_id = None if parent in ("root", "none", post_id) else parent
+                cid = c.get("id", "")
+                if cid in seen_ids:
+                    continue
+                if cid:
+                    seen_ids.add(cid)
                 results.append(CommentResult(
                     platform="youtube",
-                    source_id=c.get("id", ""),
+                    source_id=cid,
                     content=c.get("text", ""),
                     author_name=c.get("author", ""),
                     author_id=c.get("author_id") or c.get("author_channel_id"),
@@ -284,10 +325,15 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         # Tier 2: Innertube API (Fast fallback)
         innertube = InnertubeClient()
         try:
-            results = await innertube.get_comments(post_id, limit)
-            if results:
-                logger.info(f"[Innertube] Success: fetched {len(results)} comments")
-                return results
+            innertube_results = await innertube.get_comments(post_id, limit)
+            if innertube_results:
+                # Deduplicate against any results already collected
+                deduped = [
+                    r for r in innertube_results
+                    if r.source_id not in seen_ids
+                ]
+                logger.info(f"[Innertube] Success: fetched {len(deduped)} unique comments")
+                return deduped
         except Exception as e:
             logger.warning(f"[Innertube] Failed: {e}")
         finally:

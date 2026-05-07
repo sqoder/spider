@@ -96,22 +96,46 @@ async def test_run_command_adds_cookie_file_when_configured(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_ytdlp_crawler_comments_uses_cached_playwright_helper():
+async def test_extract_comments_info_uses_comment_only_command():
+    client = YtdlpClient()
+    with patch.object(
+        client,
+        "_run_command",
+        new_callable=AsyncMock,
+        return_value=(b'{"id": "123", "comments": []}', b"", 0),
+    ) as mock_run:
+        info = await client.extract_comments_info("https://youtu.be/abc12345678", max_comments=7)
+
+    assert info["id"] == "123"
+    cmd = mock_run.await_args.args[0]
+    assert "--write-comments" in cmd
+    assert "youtube:max_comments=7,7,7,7" in cmd
+    assert "--write-subs" not in cmd
+    assert "--write-auto-subs" not in cmd
+    assert "--write-thumbnail" not in cmd
+    assert "--write-info-json" not in cmd
+
+
+@pytest.mark.asyncio
+async def test_ytdlp_crawler_comments_uses_cached_visible_helper():
     crawler = YtdlpYouTubeCrawler()
     comments = []
 
     with patch(
-        "app.crawlers.youtube.playwright_crawler.PlaywrightYouTubeCrawler.get_comments",
+        "app.crawlers.youtube.visible_crawler.VisibleYouTubeCrawler.get_comments",
         new_callable=AsyncMock,
         return_value=comments,
     ) as mock_get_comments, patch(
-        "app.crawlers.youtube.playwright_crawler.PlaywrightYouTubeCrawler.__init__",
+        "app.crawlers.youtube.visible_crawler.VisibleYouTubeCrawler.__init__",
         return_value=None,
     ) as mock_init, patch(
-        "app.crawlers.youtube.playwright_crawler.PlaywrightYouTubeCrawler.close",
+        "app.crawlers.youtube.visible_crawler.VisibleYouTubeCrawler.close",
         new_callable=AsyncMock,
-    ) as mock_close:
-        # First call: should create and cache the pw crawler
+    ) as mock_close, patch(
+        "app.crawlers.youtube.playwright_crawler.PlaywrightYouTubeCrawler.__init__",
+        side_effect=AssertionError("old Playwright helper should not be used"),
+    ):
+        # First call: should create and cache the visible crawler
         result1 = await crawler.get_comments("vid12345678", limit=7)
         assert result1 == comments
         mock_init.assert_called_once()
@@ -121,6 +145,6 @@ async def test_ytdlp_crawler_comments_uses_cached_playwright_helper():
         assert result2 == comments
         mock_init.assert_called_once()  # still only 1 init
 
-        # close should trigger pw_crawler.close
+        # close should trigger visible crawler close
         await crawler.close()
         mock_close.assert_awaited_once()

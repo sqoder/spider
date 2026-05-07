@@ -42,9 +42,6 @@ class YtdlpClient:
             if settings.youtube_cookies_file and os.path.exists(settings.youtube_cookies_file):
                 current_cmd.extend(["--cookies", settings.youtube_cookies_file])
 
-            # Enable remote EJS components for JS challenge solving (deno)
-            current_cmd.extend(["--remote-components", "ejs:github"])
-
             try:
                 process = await asyncio.create_subprocess_exec(
                     *current_cmd,
@@ -137,6 +134,32 @@ class YtdlpClient:
             "--write-thumbnail",
             "--write-info-json",
             "--sub-langs", "en,zh-Hans,zh-Hant",
+            url,
+        ]
+
+        stdout, stderr, returncode = await self._run_command(cmd, url)
+
+        if returncode != 0 and not stdout:
+            error_msg = stderr.decode("utf-8", errors="replace").strip()
+            raise MediaDownloadError(url, error_msg)
+
+        if not stdout:
+            raise MediaDownloadError(url, "yt-dlp returned empty output")
+
+        return json.loads(stdout.decode("utf-8"))
+
+    async def extract_comments_info(self, url: str, max_comments: int = 99999) -> dict[str, Any]:
+        """Extract metadata and comments without writing media sidecar files."""
+        max_val = "all" if max_comments >= 99999 else str(max_comments)
+        cmd = [
+            "yt-dlp",
+            "--dump-json",
+            "--no-download",
+            "--no-playlist",
+            "--ignore-errors",
+            "--write-comments",
+            "--extractor-args",
+            f"youtube:max_comments={max_val},{max_val},{max_val},{max_val}",
             url,
         ]
 
@@ -262,3 +285,7 @@ class YtdlpClient:
             raise MediaDownloadError(url, error_msg)
 
         return self.download_dir
+
+    async def close(self) -> None:
+        """No-op for interface compatibility; yt-dlp has no persistent connections."""
+        pass

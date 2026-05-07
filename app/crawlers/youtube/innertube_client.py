@@ -110,8 +110,8 @@ class InnertubeClient:
         # Extract API Key - Broaden regex
         api_key_match = re.search(r'["\']INNERTUBE_API_KEY["\']\s*:\s*["\']([^"\']+)["\']', html)
         if not api_key_match:
-            # Try a second pattern
-            api_key_match = re.search(r'key=([^"\'&]+)', html)
+            # More targeted fallback: look for common Innertube key patterns
+            api_key_match = re.search(r'["\']key["\']\s*:\s*["\']([A-Za-z0-9_-]{30,})["\']', html)
             
         if not api_key_match:
             logger.error(f"Failed to find API key in HTML for {video_id}")
@@ -680,4 +680,7 @@ class InnertubeClient:
         return int(value * multiplier)
 
     async def close(self):
-        await self.client.aclose()
+        try:
+            await self.client.aclose()
+        except Exception as exc:
+            logger.debug(f"[Innertube] Error closing httpx client (ignored): {exc}")

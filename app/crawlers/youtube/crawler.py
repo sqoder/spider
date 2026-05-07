@@ -202,9 +202,9 @@ class YouTubeCrawler(BaseCrawler):
                         source_id=comment_id,
                         content=top_comment.get("textDisplay"),
                         author_name=top_comment.get("authorDisplayName"),
-                        author_username=top_comment.get("authorChannelUrl", "").split("/")[
-                            -1
-                        ],
+                        author_username=self._channel_handle_from_url(
+                            top_comment.get("authorChannelUrl", "")
+                        ),
                         author_id=top_comment.get("authorChannelId", {}).get("value"),
                         like_count=top_comment.get("likeCount", 0),
                         reply_count=item["snippet"].get("totalReplyCount", 0),
@@ -397,3 +397,22 @@ class YouTubeCrawler(BaseCrawler):
     async def close(self) -> None:
         """Cleanup resources."""
         await self.api.close()
+        await self.ytdlp.close()
+
+    @staticmethod
+    def _channel_handle_from_url(url: str) -> str:
+        """Extract a readable handle from a YouTube channel URL.
+
+        Handles /channel/UCxxx, /@handle, /c/name, and bare IDs.
+        """
+        if not url:
+            return ""
+        # Strip trailing slash and split
+        parts = url.rstrip("/").split("/")
+        if len(parts) < 2:
+            return url
+        last = parts[-1]
+        # If the segment before last is 'channel', last is the UCxxx ID — keep as-is
+        # If the segment before last is '@', the handle is the last part
+        # If the last part starts with '@', strip it for a clean handle
+        return last

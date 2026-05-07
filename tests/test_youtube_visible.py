@@ -1,4 +1,7 @@
 from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 def test_search_video_renderer_structures_visible_card_fields():
@@ -208,3 +211,40 @@ def test_watch_initial_data_structures_visible_detail_and_ytdlp_sources():
     assert result.raw_sources["yt_initial_data"] == yt_data
     assert result.raw_sources["ytdlp"] == ytdlp_info
     assert result.capture_meta["method"] == "youtube_visible_detail"
+
+
+@pytest.mark.asyncio
+async def test_comments_ytdlp_fallback_respects_limit():
+    crawler = VisibleYouTubeCrawler()
+    raw_comments = [
+        {"id": "c1", "text": "one", "parent": "root", "author": "User 1"},
+        {"id": "c2", "text": "two", "parent": "root", "author": "User 2"},
+    ]
+    innertube = AsyncMock()
+    innertube.get_comments.return_value = []
+    innertube.close = AsyncMock()
+    crawler.ytdlp.extract_comments_info = AsyncMock(
+        return_value={"id": "vid12345678", "comments": raw_comments}
+    )
+    crawler.ytdlp.extract_info_with_comments = AsyncMock(
+        side_effect=AssertionError("old comments method should not be used")
+    )
+
+    with patch(
+        "app.crawlers.youtube.visible_crawler.InnertubeClient",
+        return_value=innertube,
+    ), patch.object(
+        crawler,
+        "_get_comments_from_dom",
+        new_callable=AsyncMock,
+    ) as mock_dom:
+        comments = await crawler.get_comments("vid12345678", limit=2)
+
+    crawler.ytdlp.extract_comments_info.assert_awaited_once_with(
+        "https://www.youtube.com/watch?v=vid12345678",
+        max_comments=2,
+    )
+    mock_dom.assert_not_awaited()
+    assert [comment.source_id for comment in comments] == ["c1", "c2"]
+    assert comments[0].capture_meta["method"] == "youtube_ytdlp_comments"
+    assert comments[0].capture_meta["limit"] == 2

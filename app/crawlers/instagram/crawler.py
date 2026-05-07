@@ -1,77 +1,136 @@
 """
 Instagram crawler implementation (Phase 2).
-Uses gallery-dl for public profile, posts, and reels.
-First phase scope: public profiles, public posts, public reels, single URL parsing.
+Uses native web endpoints for public profiles and single posts to bypass login.
 """
 
 from datetime import datetime, timezone
+import json
+import re
 from typing import Optional
 
 from loguru import logger
+import httpx
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
-from app.crawlers.tiktok.gallerydl_client import GalleryDLClient
 
 
 class InstagramCrawler(BaseCrawler):
-    """Instagram platform crawler (Phase 2)."""
+    """Instagram platform crawler (Phase 2 - Login-free)."""
 
     platform = "instagram"
 
     def __init__(self):
         super().__init__()
-        self.gallery_dl = GalleryDLClient(platform="instagram")
+        logger.info("Instagram crawler initialized (Login-free mode)")
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """
         Search Instagram by hashtag.
-        Note: Instagram search is very limited without login.
+        Note: Instagram search is heavily protected and requires login. 
+        Please use 'user' mode in config.py for login-free profile crawling.
         """
         await self._rate_limit()
-        logger.info(f"Instagram search: '{keyword}', limit={limit}")
-
-        tag = keyword.replace(" ", "").replace("#", "")
-        url = f"https://www.instagram.com/explore/tags/{tag}/"
-
-        try:
-            items = await self.gallery_dl.extract_metadata(url)
-            results = []
-            for item in items[:limit]:
-                result = self._parse_instagram_item(item)
-                if result:
-                    results.append(result)
-            return results
-        except Exception as e:
-            logger.warning(f"Instagram search failed: {e}")
-            return []
+        logger.warning("Instagram hashtag search is restricted and requires login. Skipping.")
+        return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get posts from an Instagram user's public profile."""
+        """Get posts from an Instagram user's public profile using the login-free Web Profile API via curl."""
         await self._rate_limit()
+        username = username.lstrip('@')
         logger.info(f"Instagram user posts: '{username}', limit={limit}")
 
-        items = await self.gallery_dl.get_user_content(username, limit=limit)
+        url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
 
-        results = []
-        for item in items:
-            result = self._parse_instagram_item(item)
-            if result:
-                results.append(result)
+        try:
+            import asyncio
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s",
+                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "-H", "X-IG-App-ID: 936619743392459",
+                url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
 
-        return results[:limit]
+            data = json.loads(stdout.decode("utf-8", errors="ignore"))
+            user_data = data.get("data", {}).get("user", {})
+            if not user_data:
+                logger.warning(f"No user data found for {username}")
+                return []
+
+            edges = user_data.get("edge_owner_to_timeline_media", {}).get("edges", [])
+            results = []
+            for edge in edges:
+                node = edge.get("node", {})
+                if node:
+                    # Inject owner info so _parse_instagram_item can read it
+                    node["owner"] = {
+                        "id": user_data.get("id"),
+                        "username": user_data.get("username"),
+                        "full_name": user_data.get("full_name"),
+                    }
+                    parsed = self._parse_instagram_item(node)
+                    if parsed:
+                        results.append(parsed)
+                if len(results) >= limit:
+                    break
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Instagram user posts failed for {username}: {e}")
+            return []
 
     async def get_post_detail(self, url: str) -> CrawlResult:
-        """Get detailed info for a single Instagram post."""
+        """Get detailed info for a single Instagram post using the captioned embed page unescape trick via curl."""
         await self._rate_limit()
         logger.info(f"Instagram post detail: {url}")
 
-        items = await self.gallery_dl.extract_metadata(url)
-        if items:
-            result = self._parse_instagram_item(items[0])
-            if result:
-                return result
+        # Extract shortcode
+        shortcode_match = re.search(r"/(?:p|reels|reel)/([A-Za-z0-9_-]+)", url)
+        if not shortcode_match:
+            raise ValueError(f"Could not extract shortcode from url: {url}")
+        shortcode = shortcode_match.group(1)
 
-        raise ValueError(f"Could not parse Instagram post from: {url}")
+        embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+
+        try:
+            import asyncio
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s",
+                embed_url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            html_data = stdout.decode("utf-8", errors="ignore")
+
+            idx = html_data.find("gql_data")
+            if idx == -1:
+                idx = html_data.find("shortcode_media")
+
+            if idx != -1:
+                sub = html_data[idx:]
+                start_brace = sub.find("{")
+                if start_brace != -1:
+                    raw_to_clean = sub[start_brace:]
+                    raw_clean = raw_to_clean.replace('\\"', '"').replace('\\/', '/')
+                    try:
+                        data, decode_idx = json.JSONDecoder().raw_decode(raw_clean)
+                        media_data = data.get("shortcode_media", {})
+                        if media_data:
+                            parsed = self._parse_instagram_item(media_data)
+                            if parsed:
+                                return parsed
+                    except Exception as json_err:
+                        logger.debug(f"JSON raw_decode failed: {json_err}")
+
+            raise ValueError("Could not find shortcode_media in embed page")
+
+        except Exception as e:
+            logger.error(f"Instagram post detail failed: {e}")
+            raise
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         """Instagram comments are not supported in Phase 2."""
@@ -81,7 +140,7 @@ class InstagramCrawler(BaseCrawler):
     # ---- Private helpers ----
 
     def _parse_instagram_item(self, data: dict) -> Optional[CrawlResult]:
-        """Parse gallery-dl Instagram metadata into a CrawlResult."""
+        """Parse Instagram metadata into a CrawlResult."""
         if not data:
             return None
 
@@ -90,7 +149,7 @@ class InstagramCrawler(BaseCrawler):
             return None
 
         # Determine content type
-        typename = data.get("typename", data.get("media_type", ""))
+        typename = data.get("__typename", data.get("typename", data.get("media_type", "")))
         if "video" in str(typename).lower() or "reel" in str(typename).lower():
             content_type = "video"
         elif "carousel" in str(typename).lower() or "sidecar" in str(typename).lower():
@@ -136,7 +195,7 @@ class InstagramCrawler(BaseCrawler):
             platform="instagram",
             source_id=post_id,
             url=f"https://www.instagram.com/p/{post_id}/" if post_id else None,
-            title=None,  # Instagram posts don't have titles
+            title=None,
             content=caption,
             content_type=content_type,
             author_id=str(owner.get("id", "")),
@@ -144,13 +203,11 @@ class InstagramCrawler(BaseCrawler):
             author_username=username,
             author_url=f"https://www.instagram.com/{username}/" if username else None,
             like_count=data.get("edge_media_preview_like", {}).get(
-                "count", data.get("like_count", 0)
-            )
-            or 0,
+                "count", data.get("like_count", data.get("edge_liked_by", {}).get("count", 0))
+            ) or 0,
             comment_count=data.get("edge_media_to_comment", {}).get(
                 "count", data.get("comment_count", 0)
-            )
-            or 0,
+            ) or 0,
             view_count=data.get("video_view_count", 0) or 0,
             media=media,
             thumbnail_url=data.get("thumbnail_src", data.get("display_url")),
@@ -160,3 +217,4 @@ class InstagramCrawler(BaseCrawler):
 
     async def close(self) -> None:
         pass
+
