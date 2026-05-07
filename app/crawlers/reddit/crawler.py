@@ -198,7 +198,7 @@ def _crosspost_chain(data: dict) -> list[dict]:
 
 def _extract_post_ids(url: str) -> tuple[str, str]:
     """Extract (subreddit, post_id) from a Reddit URL."""
-    match = re.search(r"reddit\.com/r/([\w]+)/comments/([\w]+)", url)
+    match = re.search(r"(?:old\.)?reddit\.com/r/([A-Za-z0-9_-]+)/comments/([A-Za-z0-9_]+)", url)
     if match:
         return match.group(1), match.group(2)
     # Try short-form /comments/post_id
@@ -219,6 +219,11 @@ class RedditCrawler(BaseCrawler):
     """
 
     platform = "reddit"
+
+    @staticmethod
+    def _extract_post_info(url: str) -> tuple[str, str]:
+        """Backward-compatible URL parser used by tests and older callers."""
+        return _extract_post_ids(url)
 
     def __init__(self):
         super().__init__()
