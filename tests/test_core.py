@@ -7,10 +7,16 @@ import asyncio
 import pytest
 
 from app.core.config import Settings, get_settings
-from app.core.exceptions import (APIKeyMissingError, ContentNotFoundError,
-                                 CrawlerBaseError, CrawlError,
-                                 MediaDownloadError, PlatformNotSupportedError,
-                                 QuotaExhaustedError, RateLimitExceededError)
+from app.core.exceptions import (
+    APIKeyMissingError,
+    ContentNotFoundError,
+    CrawlerBaseError,
+    CrawlError,
+    MediaDownloadError,
+    PlatformNotSupportedError,
+    QuotaExhaustedError,
+    RateLimitExceededError,
+)
 from app.core.rate_limiter import RateLimiter
 
 # ---- Config Tests ----

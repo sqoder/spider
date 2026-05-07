@@ -5,8 +5,7 @@ Stores comments/replies linked to a Post.
 
 from datetime import datetime
 
-from sqlalchemy import (JSON, DateTime, ForeignKey, Integer, String, Text,
-                        UniqueConstraint, func)
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,9 +33,7 @@ class Comment(Base):
     # Thread support
     parent_comment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    published_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_data: Mapped[dict | None] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"), nullable=True
     )
@@ -63,9 +60,7 @@ class Comment(Base):
     post = relationship("Post", back_populates="comments")
 
     __table_args__ = (
-        UniqueConstraint(
-            "platform", "source_id", name="uq_comments_platform_source_id"
-        ),
+        UniqueConstraint("platform", "source_id", name="uq_comments_platform_source_id"),
     )
 
     def __repr__(self) -> str:

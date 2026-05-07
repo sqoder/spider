@@ -12,8 +12,7 @@ from scrapling import Fetcher
 from loguru import logger
 
 from app.core.config import get_settings
-from app.core.exceptions import (APIKeyMissingError, CrawlError,
-                                 QuotaExhaustedError)
+from app.core.exceptions import APIKeyMissingError, CrawlError, QuotaExhaustedError
 from app.core.proxy_manager import proxy_manager
 
 
@@ -45,10 +44,7 @@ class YouTubeAPIClient:
             raise APIKeyMissingError("youtube", "YOUTUBE_API_KEY")
 
         # Initialize base fetcher
-        self._fetcher = Fetcher(
-            timeout=30000,
-            headers={"Accept": "application/json"}
-        )
+        self._fetcher = Fetcher(timeout=30000, headers={"Accept": "application/json"})
 
     def _check_quota(self, endpoint: str) -> None:
         """Check if we have enough quota for the request."""
@@ -73,21 +69,26 @@ class YouTubeAPIClient:
                 proxy_url = proxy_manager.get_proxy()
 
             try:
+
                 def _do_fetch():
                     # If proxy is needed, we might need a fresh fetcher or use session
                     # For simplicity and thread-safety in executor, we use a local fetcher or configure proxy
                     f = self._fetcher
                     if proxy_url:
-                        f = Fetcher(proxy=proxy_url, timeout=30000, headers={"Accept": "application/json"})
-                    
+                        f = Fetcher(
+                            proxy=proxy_url, timeout=30000, headers={"Accept": "application/json"}
+                        )
+
                     return f.get(url, params=params)
 
                 response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
-                
+
                 if response.status_code != 200:
-                    logger.warning(f"YouTube API request failed (status {response.status_code}): {response.text[:100]}")
+                    logger.warning(
+                        f"YouTube API request failed (status {response.status_code}): {response.text[:100]}"
+                    )
                     if attempt < retry_count and response.status_code >= 500:
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(2**attempt)
                         continue
                     response.raise_for_status()
 
@@ -95,8 +96,10 @@ class YouTubeAPIClient:
                 return response.json()
             except Exception as e:
                 if attempt < retry_count:
-                    logger.warning(f"YouTube API request failed (attempt {attempt+1}): {e}. Retrying...")
-                    await asyncio.sleep(2 ** attempt)
+                    logger.warning(
+                        f"YouTube API request failed (attempt {attempt + 1}): {e}. Retrying..."
+                    )
+                    await asyncio.sleep(2**attempt)
                     continue
                 logger.error(f"YouTube API error after {retry_count} retries: {e}")
                 raise CrawlError("youtube", endpoint, str(e))

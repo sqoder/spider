@@ -12,6 +12,7 @@ from loguru import logger
 from app.core.proxy_manager import proxy_manager
 from app.core.config import get_settings
 
+
 async def save_cookies_as_netscape(context, filepath):
     """Convert Playwright cookies to Netscape format for yt-dlp/Innertube."""
     cookies = await context.cookies()
@@ -29,6 +30,7 @@ async def save_cookies_as_netscape(context, filepath):
             f.write(f"{domain}\t{flag}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n")
     logger.info(f"Successfully saved Netscape cookies to {filepath}")
 
+
 async def run_login():
     """Launch browser for interactive login."""
     # Initialize proxy settings
@@ -43,55 +45,61 @@ async def run_login():
     async with async_playwright() as p:
         # 1. Launch a persistent context to allow manual interaction
         user_data_dir = "./.youtube_login_data"
-        
+
         logger.info("Launching browser for YouTube login...")
         logger.info("Please log in to your YouTube account in the opened window.")
-        
+
         try:
             context = await p.chromium.launch_persistent_context(
                 user_data_dir,
-                headless=False, # Must be False for interaction
+                headless=False,  # Must be False for interaction
                 proxy=proxy,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
-                viewport={"width": 1280, "height": 720}
+                viewport={"width": 1280, "height": 720},
             )
         except Exception as e:
             logger.error(f"Failed to launch browser: {e}")
             return
-        
+
         page = await context.new_page()
-        
+
         logger.info("Navigating to Google Login...")
         try:
             # Increased timeout and used networkidle for stability
-            await page.goto("https://accounts.google.com/ServiceLogin?service=youtube", wait_until="networkidle", timeout=60000)
+            await page.goto(
+                "https://accounts.google.com/ServiceLogin?service=youtube",
+                wait_until="networkidle",
+                timeout=60000,
+            )
         except Exception as e:
             logger.error(f"Failed to load login page: {e}")
-            logger.info("This is often due to network blocks. Please ensure your PROXY_URL in .env is correct.")
+            logger.info(
+                "This is often due to network blocks. Please ensure your PROXY_URL in .env is correct."
+            )
             await context.close()
             return
-        
+
         # Wait for user to finish login
         try:
             while True:
                 cookies = await context.cookies()
                 # SID is the most critical authentication cookie for Google
-                has_auth = any(c['name'] == 'SID' for c in cookies)
-                
+                has_auth = any(c["name"] == "SID" for c in cookies)
+
                 if has_auth and ("youtube.com" in page.url or "google.com" in page.url):
                     logger.info("Login detected! Capturing cookies...")
                     # Give it a moment to stabilize
                     await asyncio.sleep(2)
                     break
-                    
+
                 if page.is_closed():
                     logger.warning("Browser window closed before login detection.")
                     break
-                    
+
                 await asyncio.sleep(2)
         except Exception as e:
             logger.error(f"Error during login detection: {e}")
-            
+
         # 2. Save session states
         settings = get_settings()
         # Respect configured path; fall back to project-root defaults
@@ -102,9 +110,10 @@ async def run_login():
         await save_cookies_as_netscape(context, cookies_txt)
         await context.storage_state(path=state_json)
         logger.info(f"Successfully saved Playwright state to {state_json}")
-        
+
         await context.close()
         logger.info("Login process completed. You can now use the saved cookies.")
+
 
 if __name__ == "__main__":
     asyncio.run(run_login())

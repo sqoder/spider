@@ -26,18 +26,20 @@ class YtdlpClient:
         settings = get_settings()
         self.download_dir = settings.media_path / "youtube"
 
-    async def _run_command(self, cmd: list[str], url: str, timeout: int = 300, retry_count: int = 2) -> tuple[bytes, bytes, int]:
+    async def _run_command(
+        self, cmd: list[str], url: str, timeout: int = 300, retry_count: int = 2
+    ) -> tuple[bytes, bytes, int]:
         """Run yt-dlp command with proxy rotation, cookies, and retries."""
         settings = get_settings()
         for attempt in range(retry_count + 1):
             current_cmd = cmd.copy()
-            
+
             # Add proxy
             if proxy_manager.enabled:
                 proxy_url = proxy_manager.get_proxy()
                 if proxy_url:
                     current_cmd.extend(["--proxy", proxy_url])
-            
+
             # Add cookies
             if settings.youtube_cookies_file and os.path.exists(settings.youtube_cookies_file):
                 current_cmd.extend(["--cookies", settings.youtube_cookies_file])
@@ -50,28 +52,34 @@ class YtdlpClient:
                     limit=1024 * 1024 * 50,
                 )
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-                
+
                 if process.returncode == 0 or stdout:
                     return stdout, stderr, process.returncode
-                
+
                 error_msg = stderr.decode("utf-8", errors="replace").strip()
                 if attempt < retry_count:
                     # Check if error indicates outdated yt-dlp
-                    if any(kw in error_msg.lower() for kw in ["outdated", "signature", "extractor"]):
-                        logger.warning(f"Detected potential yt-dlp extractor error: {error_msg}. Attempting auto-update...")
+                    if any(
+                        kw in error_msg.lower() for kw in ["outdated", "signature", "extractor"]
+                    ):
+                        logger.warning(
+                            f"Detected potential yt-dlp extractor error: {error_msg}. Attempting auto-update..."
+                        )
                         await self._auto_update_ytdlp()
-                    
-                    logger.warning(f"yt-dlp command failed (attempt {attempt+1}): {error_msg}. Retrying with different proxy...")
+
+                    logger.warning(
+                        f"yt-dlp command failed (attempt {attempt + 1}): {error_msg}. Retrying with different proxy..."
+                    )
                     continue
             except asyncio.TimeoutError:
                 if attempt < retry_count:
-                    logger.warning(f"yt-dlp command timed out (attempt {attempt+1}). Retrying...")
+                    logger.warning(f"yt-dlp command timed out (attempt {attempt + 1}). Retrying...")
                     continue
                 raise MediaDownloadError(url, f"Timed out after {retry_count} retries")
             except Exception as e:
                 logger.error(f"Unexpected error running yt-dlp: {e}")
                 raise MediaDownloadError(url, str(e))
-        
+
         return b"", b"", 1
 
     async def _auto_update_ytdlp(self):
@@ -79,15 +87,22 @@ class YtdlpClient:
         logger.info("Attempting to auto-update yt-dlp...")
         try:
             process = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp",
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "yt-dlp",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
             if process.returncode == 0:
                 logger.info("yt-dlp update completed successfully.")
             else:
-                logger.error(f"yt-dlp update failed with exit code {process.returncode}: {stderr.decode()}")
+                logger.error(
+                    f"yt-dlp update failed with exit code {process.returncode}: {stderr.decode()}"
+                )
         except Exception as e:
             logger.error(f"Failed to update yt-dlp: {e}")
 
@@ -113,7 +128,9 @@ class YtdlpClient:
 
         return json.loads(stdout.decode("utf-8"))
 
-    async def extract_info_with_comments(self, url: str, max_comments: int = 99999) -> dict[str, Any]:
+    async def extract_info_with_comments(
+        self, url: str, max_comments: int = 99999
+    ) -> dict[str, Any]:
         """Extract metadata AND download comments/subtitles/thumbnails from a URL.
 
         max_comments sets yt-dlp's internal limit per video. Use 99999 for "all".
@@ -125,7 +142,8 @@ class YtdlpClient:
             "--no-download",
             "--no-playlist",
             "--ignore-errors",
-            "-P", str(self.download_dir),
+            "-P",
+            str(self.download_dir),
             "--write-comments",
             "--extractor-args",
             f"youtube:max_comments={max_val},{max_val},{max_val},{max_val}",
@@ -133,7 +151,8 @@ class YtdlpClient:
             "--write-auto-subs",
             "--write-thumbnail",
             "--write-info-json",
-            "--sub-langs", "en,zh-Hans,zh-Hant",
+            "--sub-langs",
+            "en,zh-Hans,zh-Hant",
             url,
         ]
 
@@ -174,7 +193,9 @@ class YtdlpClient:
 
         return json.loads(stdout.decode("utf-8"))
 
-    async def extract_multiple_info(self, url_or_query: str, limit: int = None) -> list[dict[str, Any]]:
+    async def extract_multiple_info(
+        self, url_or_query: str, limit: int = None
+    ) -> list[dict[str, Any]]:
         """Extract metadata for multiple items (search or playlist)."""
         cmd = [
             "yt-dlp",
@@ -186,11 +207,13 @@ class YtdlpClient:
         ]
         if limit:
             cmd.extend(["--playlist-end", str(limit)])
-            
+
         stdout, stderr, returncode = await self._run_command(cmd, url_or_query)
 
         if returncode != 0 and not stdout:
-            logger.warning(f"yt-dlp extract_multiple_info failed: {stderr.decode('utf-8', errors='replace').strip()}")
+            logger.warning(
+                f"yt-dlp extract_multiple_info failed: {stderr.decode('utf-8', errors='replace').strip()}"
+            )
             return []
 
         results = []
@@ -216,16 +239,20 @@ class YtdlpClient:
 
         cmd = [
             "yt-dlp",
-            "-o", f"{output_template}.%(ext)s" if "%(ext)s" not in output_template else output_template,
+            "-o",
+            f"{output_template}.%(ext)s" if "%(ext)s" not in output_template else output_template,
             "--no-playlist",
             "--ignore-errors",
             "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
+            "--convert-thumbnails",
+            "jpg",
             "--write-info-json",
             "--write-subs",
             "--write-auto-subs",
-            "--sub-langs", "en,zh-Hans,zh-Hant",
-            "--convert-subs", "srt",
+            "--sub-langs",
+            "en,zh-Hans,zh-Hant",
+            "--convert-subs",
+            "srt",
             "--add-metadata",
             "--embed-subs",
             "--embed-thumbnail",
@@ -236,10 +263,14 @@ class YtdlpClient:
             cmd.extend(["-f", format_id])
         else:
             quality = max_quality or "2160"
-            cmd.extend([
-                "-f", f"bestvideo[height<={quality}]+bestaudio/best/best[height<={quality}]",
-                "--merge-output-format", "mp4",
-            ])
+            cmd.extend(
+                [
+                    "-f",
+                    f"bestvideo[height<={quality}]+bestaudio/best/best[height<={quality}]",
+                    "--merge-output-format",
+                    "mp4",
+                ]
+            )
 
         cmd.append(url)
 
@@ -271,10 +302,15 @@ class YtdlpClient:
 
         cmd = [
             "yt-dlp",
-            "-o", output_template,
+            "-o",
+            output_template,
             "--no-playlist",
             "--ignore-errors",
-            "-x", "--audio-format", "mp3", "--audio-quality", "192K",
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "192K",
             url,
         ]
 

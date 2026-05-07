@@ -7,8 +7,17 @@ post_type: video | image | text | link | album | short | reel | tweet | reddit_p
 from datetime import datetime
 
 import enum
-from sqlalchemy import (JSON, DateTime, ForeignKey, Integer, String, Text,
-                        UniqueConstraint, Index, func)
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Index,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 

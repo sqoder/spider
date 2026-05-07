@@ -57,14 +57,12 @@ class MediaStorage:
             post_dir = self.get_post_media_dir(platform, source_id)
             # Standard naming within the folder
             return post_dir / f"video.{extension.lstrip('.')}"
-        
+
         platform_dir = self.get_platform_dir(platform)
         filename = f"{source_id}.{extension.lstrip('.')}"
         return platform_dir / filename
 
-    def file_exists(
-        self, platform: str, source_id: str, extension: str = "mp4"
-    ) -> bool:
+    def file_exists(self, platform: str, source_id: str, extension: str = "mp4") -> bool:
         """Check if a media file already exists."""
         path = self.get_media_path(platform, source_id, extension)
         return path.exists()

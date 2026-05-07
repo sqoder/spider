@@ -3,8 +3,19 @@ import sys
 from unittest.mock import patch, MagicMock
 from run import main
 
+
 def test_search_args():
-    test_args = ["run.py", "search", "--platform", "youtube", "--keyword", "test", "--limit", "5", "--download-media"]
+    test_args = [
+        "run.py",
+        "search",
+        "--platform",
+        "youtube",
+        "--keyword",
+        "test",
+        "--limit",
+        "5",
+        "--download-media",
+    ]
     with patch.object(sys, "argv", test_args):
         # Mock register_all_crawlers to avoid actual registration
         with patch("run.register_all_crawlers"):
@@ -17,8 +28,18 @@ def test_search_args():
                 assert args.limit == 5
                 assert args.download_media is True
 
+
 def test_detail_args():
-    test_args = ["run.py", "detail", "--platform", "reddit", "--url", "http://test.com", "--comments-limit", "10"]
+    test_args = [
+        "run.py",
+        "detail",
+        "--platform",
+        "reddit",
+        "--url",
+        "http://test.com",
+        "--comments-limit",
+        "10",
+    ]
     with patch.object(sys, "argv", test_args):
         with patch("run.register_all_crawlers"):
             with patch("run.run_detail") as mock_run_detail:
@@ -29,6 +50,7 @@ def test_detail_args():
                 assert args.url == "http://test.com"
                 assert args.comments_limit == 10
                 assert args.download_media is False
+
 
 def test_no_args_shows_help():
     test_args = ["run.py"]

@@ -28,7 +28,7 @@ class XCrawler(BaseCrawler):
             timeout=30000,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            }
+            },
         )
         logger.info("X/Twitter crawler initialized (Login-free Syndication mode with Scrapling)")
 
@@ -37,6 +37,7 @@ class XCrawler(BaseCrawler):
         if self._twscrape_pool is None:
             try:
                 from twscrape import API, AccountsPool
+
                 self._twscrape_pool = AccountsPool()
                 self._api = API(self._twscrape_pool)
             except ImportError:
@@ -53,7 +54,9 @@ class XCrawler(BaseCrawler):
 
         api = await self._get_pool()
         if not api:
-            logger.warning("twscrape not installed or accounts not configured. X keyword search requires accounts.")
+            logger.warning(
+                "twscrape not installed or accounts not configured. X keyword search requires accounts."
+            )
             logger.warning("Please run `twscrape add_accounts` or use 'user' mode in config.")
             return []
 
@@ -67,13 +70,15 @@ class XCrawler(BaseCrawler):
             return results
         except Exception as e:
             logger.error(f"X search failed: {e}")
-            logger.warning("If this is an account error, please use 'user' mode which is login-free.")
+            logger.warning(
+                "If this is an account error, please use 'user' mode which is login-free."
+            )
             return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get tweets from a user's profile using the login-free Syndication API via Scrapling Fetcher."""
         await self._rate_limit()
-        username = username.lstrip('@')
+        username = username.lstrip("@")
         logger.info(f"X user posts: '{username}', limit={limit}")
 
         url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
@@ -82,24 +87,29 @@ class XCrawler(BaseCrawler):
         }
 
         try:
+
             def _do_fetch():
                 return self._fetcher.get(url, headers=headers)
 
             response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
-            
+
             if response.status_code != 200:
                 logger.warning(f"X syndication API failed with status {response.status_code}")
                 return []
 
             # Parse the NEXT_DATA JSON blob
-            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text)
+            match = re.search(
+                r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text
+            )
             if not match:
                 logger.warning(f"Could not find timeline data for user {username}")
                 return []
 
             data = json.loads(match.group(1))
-            instructions = data.get("props", {}).get("pageProps", {}).get("timeline", {}).get("entries", [])
-            
+            instructions = (
+                data.get("props", {}).get("pageProps", {}).get("timeline", {}).get("entries", [])
+            )
+
             results = []
             for entry in instructions:
                 content = entry.get("content", {}).get("tweet", {})
@@ -122,6 +132,7 @@ class XCrawler(BaseCrawler):
         logger.info(f"X post detail: {url}")
 
         import asyncio
+
         cmd = ["yt-dlp", "--dump-json", "--no-download", url]
         try:
             process = await asyncio.create_subprocess_exec(
@@ -134,7 +145,7 @@ class XCrawler(BaseCrawler):
                 raise ValueError(f"yt-dlp failed for {url}")
 
             info = json.loads(stdout.decode("utf-8"))
-            
+
             published_at = None
             ts = info.get("timestamp")
             if ts:
@@ -177,13 +188,13 @@ class XCrawler(BaseCrawler):
     def _parse_syndication_tweet(self, tweet: dict, username: str) -> Optional[CrawlResult]:
         if not tweet.get("id_str"):
             return None
-            
+
         tid = tweet.get("id_str")
         text = tweet.get("text", "") or tweet.get("full_text", "")
-        
+
         user = tweet.get("user", {})
         author_username = user.get("screen_name", username)
-        
+
         media = []
         extended = tweet.get("extended_entities", {}) or tweet.get("entities", {})
         if extended.get("media"):

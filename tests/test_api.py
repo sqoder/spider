@@ -51,16 +51,18 @@ class TestCrawlEndpoints:
         with patch("app.api.routes.crawl.CrawlService") as mock_service_cls:
             mock_service = mock_service_cls.return_value
             from app.services.crawl_service import CrawlSearchResponse
-            mock_service.search = AsyncMock(return_value=CrawlSearchResponse(
-                platform="youtube",
-                keyword="AI",
-                count=1,
-                items=[{"source_id": "test123", "title": "Test Video"}]
-            ))
+
+            mock_service.search = AsyncMock(
+                return_value=CrawlSearchResponse(
+                    platform="youtube",
+                    keyword="AI",
+                    count=1,
+                    items=[{"source_id": "test123", "title": "Test Video"}],
+                )
+            )
 
             response = await client.post(
-                "/api/crawl/search",
-                json={"platform": "youtube", "keyword": "AI", "limit": 10}
+                "/api/crawl/search", json={"platform": "youtube", "keyword": "AI", "limit": 10}
             )
             assert response.status_code == 200
             data = response.json()
@@ -72,11 +74,14 @@ class TestCrawlEndpoints:
         with patch("app.api.routes.crawl.CrawlService") as mock_service_cls:
             mock_service = mock_service_cls.return_value
             from app.services.crawl_service import CrawlDetailResponse
-            mock_service.detail = AsyncMock(return_value=CrawlDetailResponse(
-                platform="youtube",
-                data={"source_id": "vid12345678", "title": "Test"},
-                comments=[]
-            ))
+
+            mock_service.detail = AsyncMock(
+                return_value=CrawlDetailResponse(
+                    platform="youtube",
+                    data={"source_id": "vid12345678", "title": "Test"},
+                    comments=[],
+                )
+            )
 
             response = await client.post(
                 "/api/crawl/detail",
@@ -88,9 +93,7 @@ class TestCrawlEndpoints:
             )
             assert response.status_code == 200
             mock_service.detail.assert_awaited_with(
-                "youtube",
-                "https://www.youtube.com/watch?v=vid12345678",
-                comments_limit=123
+                "youtube", "https://www.youtube.com/watch?v=vid12345678", comments_limit=123
             )
 
 

@@ -60,6 +60,4 @@ def setup_logger() -> None:
         enqueue=True,
     )
 
-    logger.info(
-        f"Logger initialized | env={settings.app_env} | level={settings.log_level}"
-    )
+    logger.info(f"Logger initialized | env={settings.app_env} | level={settings.log_level}")

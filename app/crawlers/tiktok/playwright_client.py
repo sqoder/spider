@@ -15,6 +15,7 @@ from scrapling import StealthyFetcher
 from app.core.config import get_settings
 from app.core.browser_manager import browser_manager
 
+
 class PlaywrightTikTokClient:
     def __init__(self):
         self.fetcher: Optional[StealthyFetcher] = None
@@ -26,11 +27,8 @@ class PlaywrightTikTokClient:
         if self.fetcher is None:
             settings = get_settings()
             proxy = settings.proxy_url if settings.proxy_url else None
-            
-            self.fetcher = await browser_manager.new_fetcher(
-                headless=True,
-                proxy=proxy
-            )
+
+            self.fetcher = await browser_manager.new_fetcher(headless=True, proxy=proxy)
             # Scrapling StealthyFetcher doesn't need external stealth.min.js usually
             # as it has its own built-in stealth mechanisms.
 
@@ -46,8 +44,10 @@ class PlaywrightTikTokClient:
         # Note: In Scrapling, you can access the underlying playwright page to add listeners
         target_search = "/api/search/general/"
         target_comments = "/api/comment/list/"
-        
-        if (target_search in response.url or target_comments in response.url) and response.request.resource_type in ["fetch", "xhr"]:
+
+        if (
+            target_search in response.url or target_comments in response.url
+        ) and response.request.resource_type in ["fetch", "xhr"]:
             try:
                 if response.status == 200:
                     body = await response.json()
@@ -61,27 +61,27 @@ class PlaywrightTikTokClient:
         """
         await self.init_fetcher()
         self.intercepted_data.clear()
-        
+
         # Access raw playwright page to setup listener
         page = self.fetcher.page
         page.on("response", self._handle_response)
-        
+
         url = f"https://www.tiktok.com/search?q={urllib.parse.quote(keyword)}"
         logger.info(f"[TikTok Scrapling] Navigating to search: {url}")
-        
+
         try:
             # Use Scrapling's navigate-and-extract or just goto
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            
+
             scroll_count = (limit // 12) + 2
             await self._scroll_to_bottom(max_scrolls=scroll_count, delay=3.0)
-            
+
         except Exception as e:
             logger.warning(f"[TikTok Scrapling] Search timeout or error: {e}")
-            
+
         finally:
             page.remove_listener("response", self._handle_response)
-            
+
         # Parse all intercepted data
         videos = []
         for payload in self.intercepted_data:
@@ -91,23 +91,25 @@ class PlaywrightTikTokClient:
                     info = item.get("item", {})
                     if info:
                         videos.append(info)
-                        
+
         logger.info(f"[TikTok Scrapling] Intercepted {len(videos)} raw video items")
         return videos[:limit]
 
-    async def get_comments(self, video_id: str, limit: int = 50, username: str = "tiktok") -> List[Dict]:
+    async def get_comments(
+        self, video_id: str, limit: int = 50, username: str = "tiktok"
+    ) -> List[Dict]:
         """
         Get comments by navigating to the video URL and scrolling.
         """
         await self.init_fetcher()
         self.intercepted_data.clear()
-        
+
         page = self.fetcher.page
         page.on("response", self._handle_response)
-        
+
         url = f"https://www.tiktok.com/@{username}/video/{video_id}"
         logger.info(f"[TikTok Scrapling] Navigating to video: {url}")
-        
+
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             scroll_count = (limit // 20) + 2
@@ -116,14 +118,14 @@ class PlaywrightTikTokClient:
             logger.warning(f"[TikTok Scrapling] Comments timeout or error: {e}")
         finally:
             page.remove_listener("response", self._handle_response)
-            
+
         # Deduplicate and extract comments from intercepted payloads
         all_comments = []
         for payload in self.intercepted_data:
             comments_list = payload.get("comments", [])
             if comments_list:
                 all_comments.extend(comments_list)
-        
+
         return all_comments[:limit]
 
     async def close(self):
@@ -136,7 +138,7 @@ class PlaywrightTikTokClient:
             c_list = payload.get("comments", [])
             if c_list:
                 comments.extend(c_list)
-                
+
         return comments[:limit]
 
     async def close(self):

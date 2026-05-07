@@ -27,7 +27,9 @@ async def lifespan(app: FastAPI):
         from app.db.session import init_db
 
         await init_db()
-        logger.warning("AUTO_CREATE_TABLES is enabled. Use Alembic for normal development/production.")
+        logger.warning(
+            "AUTO_CREATE_TABLES is enabled. Use Alembic for normal development/production."
+        )
 
     try:
         from app.storage.redis import redis_storage
@@ -86,7 +88,9 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+        allow_origins=[
+            origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -98,9 +98,7 @@ class RedisStorage:
                 pass
         return None
 
-    async def cache_json_set(
-        self, key: str, data: dict, ttl: Optional[int] = None
-    ) -> bool:
+    async def cache_json_set(self, key: str, data: dict, ttl: Optional[int] = None) -> bool:
         """Cache a value as JSON."""
         import json
 
@@ -118,9 +116,7 @@ class RedisStorage:
         except redis.RedisError:
             return 0
 
-    async def increment_quota(
-        self, platform: str, date_key: str, amount: int = 1
-    ) -> int:
+    async def increment_quota(self, platform: str, date_key: str, amount: int = 1) -> int:
         """Increment quota counter for a platform."""
         if not self._client:
             return 0

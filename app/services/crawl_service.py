@@ -41,11 +41,7 @@ class CrawlService:
         self._media_service = media_service or MediaService()
 
     async def search(
-        self,
-        platform: str,
-        keyword: str,
-        limit: int = 20,
-        download_media: bool = False
+        self, platform: str, keyword: str, limit: int = 20, download_media: bool = False
     ) -> CrawlSearchResponse:
         crawler = self._crawler_factory(platform)
         try:
@@ -61,7 +57,9 @@ class CrawlService:
             if download_media:
                 for item in results:
                     try:
-                        await self._download_platform_media(platform, item.url, item.source_id, item.to_dict())
+                        await self._download_platform_media(
+                            platform, item.url, item.source_id, item.to_dict()
+                        )
                     except Exception as e:
                         logger.warning(f"Failed to download media for {item.url}: {e}")
 
@@ -75,11 +73,7 @@ class CrawlService:
             await crawler.close()
 
     async def detail(
-        self,
-        platform: str,
-        url: str,
-        comments_limit: int = 0,
-        download_media: bool = False
+        self, platform: str, url: str, comments_limit: int = 0, download_media: bool = False
     ) -> CrawlDetailResponse:
         crawler = self._crawler_factory(platform)
         try:
@@ -107,7 +101,9 @@ class CrawlService:
 
             if download_media:
                 try:
-                    await self._download_platform_media(platform, url, result.source_id, result_dict)
+                    await self._download_platform_media(
+                        platform, url, result.source_id, result_dict
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to download media for {url}: {e}")
 
@@ -119,7 +115,9 @@ class CrawlService:
         finally:
             await crawler.close()
 
-    async def _download_platform_media(self, platform: str, url: str, source_id: str, data: dict) -> None:
+    async def _download_platform_media(
+        self, platform: str, url: str, source_id: str, data: dict
+    ) -> None:
         if platform == "youtube":
             await self._media_service.download_youtube(url, source_id)
         elif platform == "tiktok":
@@ -129,6 +127,8 @@ class CrawlService:
         elif platform == "instagram":
             await self._media_service.download_instagram(data.get("media", []), source_id)
         elif platform == "reddit":
-            await self._media_service.download_reddit(data.get("media", []), source_id, post_url=url)
+            await self._media_service.download_reddit(
+                data.get("media", []), source_id, post_url=url
+            )
         else:
             logger.info(f"Media download not supported for platform: {platform}")

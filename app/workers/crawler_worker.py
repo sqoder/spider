@@ -22,6 +22,7 @@ def _run_async(coro):
 
     if loop.is_running():
         import nest_asyncio
+
         nest_asyncio.apply()
         return loop.run_until_complete(coro)
     else:
@@ -141,7 +142,7 @@ async def _store_task_results(task, results, comments_by_post, comment_repo=None
                     capture_meta=c.capture_meta,
                 )
                 await comment_repo.create_or_update(comment_data)
-        
+
         # Also store via StoreFactory
         store = StoreFactory.create_store(task.platform, task.task_type)
         try:
@@ -158,17 +159,13 @@ async def _store_task_results(task, results, comments_by_post, comment_repo=None
             results_dicts = [r.to_dict() for r in results]
             await store.store_content(results_dicts)
 
-            authors = [
-                r.to_dict().get("author") for r in results if r.to_dict().get("author")
-            ]
+            authors = [r.to_dict().get("author") for r in results if r.to_dict().get("author")]
             if authors:
                 await store.store_creator(authors)
 
         for source_id, comments in comments_by_post.items():
             if comments:
-                await store.store_comment(
-                    source_id, [c.to_dict() for c in comments]
-                )
+                await store.store_comment(source_id, [c.to_dict() for c in comments])
             elif results:
                 for r in results:
                     if r.source_id == source_id and r.raw.get("comments"):
@@ -179,6 +176,7 @@ async def _store_task_results(task, results, comments_by_post, comment_repo=None
             for r in results:
                 try:
                     from app.workers.crawler_worker import download_media
+
                     if callable(getattr(download_media, "delay", None)):
                         download_media.delay(task.platform, task.url, r.source_id)
                 except Exception as e:
@@ -219,10 +217,8 @@ async def _execute_task_async(task_id: int):
         try:
             crawler = CrawlerFactory.create(task.platform)
             results, comments_by_post = await _run_task_crawl(task, crawler)
-            
-            saved_count = await _store_task_results(
-                task, results, comments_by_post, comment_repo
-            )
+
+            saved_count = await _store_task_results(task, results, comments_by_post, comment_repo)
 
             await task_repo.mark_success(task_id, success_count=saved_count)
 
@@ -240,14 +236,14 @@ async def _execute_task_async(task_id: int):
         finally:
             if crawler:
                 await crawler.close()
-            
+
             try:
                 from app.db.session import close_db
+
                 await close_db()
             except Exception:
                 pass
             logger.info(f"Task {task_id} execution finished")
-
 
 
 async def _update_task_failed(task_id: int, error: str):
@@ -285,8 +281,6 @@ async def _download_media_async(platform: str, url: str, source_id: str):
         from app.crawlers.tiktok.gallerydl_client import GalleryDLClient
 
         client = GalleryDLClient(platform=platform)
-        await client.download(
-            url, output_dir=str(media_storage.get_platform_dir(platform))
-        )
+        await client.download(url, output_dir=str(media_storage.get_platform_dir(platform)))
 
     logger.info(f"Media downloaded: {platform}/{source_id}")

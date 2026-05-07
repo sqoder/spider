@@ -20,9 +20,7 @@ def test_search_video_renderer_structures_visible_card_fields():
                 {
                     "text": "OpenAI",
                     "navigationEndpoint": {
-                        "commandMetadata": {
-                            "webCommandMetadata": {"url": "/@OpenAI"}
-                        }
+                        "commandMetadata": {"webCommandMetadata": {"url": "/@OpenAI"}}
                     },
                 }
             ]
@@ -42,9 +40,7 @@ def test_search_video_renderer_structures_visible_card_fields():
         },
         "viewCountText": {"simpleText": "1.2M views"},
         "publishedTimeText": {"simpleText": "2 days ago"},
-        "detailedMetadataSnippets": [
-            {"snippetText": {"runs": [{"text": "Visible snippet"}]}}
-        ],
+        "detailedMetadataSnippets": [{"snippetText": {"runs": [{"text": "Visible snippet"}]}}],
         "badges": [{"metadataBadgeRenderer": {"label": "New"}}],
     }
 
@@ -99,14 +95,10 @@ def test_watch_initial_data_structures_visible_detail_and_ytdlp_sources():
                         "contents": [
                             {
                                 "videoPrimaryInfoRenderer": {
-                                    "title": {
-                                        "runs": [{"text": "Visible Detail Title"}]
-                                    },
+                                    "title": {"runs": [{"text": "Visible Detail Title"}]},
                                     "viewCount": {
                                         "videoViewCountRenderer": {
-                                            "viewCount": {
-                                                "simpleText": "42,000 views"
-                                            }
+                                            "viewCount": {"simpleText": "42,000 views"}
                                         }
                                     },
                                     "dateText": {"simpleText": "May 4, 2026"},
@@ -133,24 +125,16 @@ def test_watch_initial_data_structures_visible_detail_and_ytdlp_sources():
                                 "videoSecondaryInfoRenderer": {
                                     "owner": {
                                         "videoOwnerRenderer": {
-                                            "title": {
-                                                "runs": [{"text": "OpenAI"}]
-                                            },
+                                            "title": {"runs": [{"text": "OpenAI"}]},
                                             "navigationEndpoint": {
                                                 "commandMetadata": {
-                                                    "webCommandMetadata": {
-                                                        "url": "/@OpenAI"
-                                                    }
+                                                    "webCommandMetadata": {"url": "/@OpenAI"}
                                                 }
                                             },
                                             "thumbnail": {
-                                                "thumbnails": [
-                                                    {"url": "https://yt3/openai.jpg"}
-                                                ]
+                                                "thumbnails": [{"url": "https://yt3/openai.jpg"}]
                                             },
-                                            "subscriberCountText": {
-                                                "simpleText": "2M subscribers"
-                                            },
+                                            "subscriberCountText": {"simpleText": "2M subscribers"},
                                         }
                                     },
                                     "description": {
@@ -160,9 +144,7 @@ def test_watch_initial_data_structures_visible_detail_and_ytdlp_sources():
                                                 "text": "#AI",
                                                 "navigationEndpoint": {
                                                     "commandMetadata": {
-                                                        "webCommandMetadata": {
-                                                            "url": "/hashtag/ai"
-                                                        }
+                                                        "webCommandMetadata": {"url": "/hashtag/ai"}
                                                     }
                                                 },
                                             },
@@ -230,14 +212,17 @@ async def test_comments_ytdlp_fallback_respects_limit():
         side_effect=AssertionError("old comments method should not be used")
     )
 
-    with patch(
-        "app.crawlers.youtube.visible_crawler.InnertubeClient",
-        return_value=innertube,
-    ), patch.object(
-        crawler,
-        "_get_comments_from_dom",
-        new_callable=AsyncMock,
-    ) as mock_dom:
+    with (
+        patch(
+            "app.crawlers.youtube.visible_crawler.InnertubeClient",
+            return_value=innertube,
+        ),
+        patch.object(
+            crawler,
+            "_get_comments_from_dom",
+            new_callable=AsyncMock,
+        ) as mock_dom,
+    ):
         comments = await crawler.get_comments("vid12345678", limit=2)
 
     crawler.ytdlp.extract_comments_info.assert_awaited_once_with(

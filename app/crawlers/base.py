@@ -79,9 +79,7 @@ class CrawlResult:
             "media": self.media,
             "tags": self.tags,
             "subtitles": self.subtitles,
-            "published_at": (
-                self.published_at.isoformat() if self.published_at else None
-            ),
+            "published_at": (self.published_at.isoformat() if self.published_at else None),
             "raw": self.raw,
             "visible_data": self.visible_data,
             "raw_sources": self.raw_sources,
@@ -119,9 +117,7 @@ class CommentResult:
             "like_count": self.like_count,
             "reply_count": self.reply_count,
             "parent_comment_id": self.parent_comment_id,
-            "published_at": (
-                self.published_at.isoformat() if self.published_at else None
-            ),
+            "published_at": (self.published_at.isoformat() if self.published_at else None),
             "raw": self.raw,
             "visible_data": self.visible_data,
             "raw_sources": self.raw_sources,

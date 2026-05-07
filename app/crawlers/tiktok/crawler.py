@@ -38,7 +38,7 @@ class TikTokCrawler(BaseCrawler):
             parsed = self._parse_playwright_item(item)
             if parsed:
                 results.append(parsed)
-                
+
         return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
@@ -48,7 +48,7 @@ class TikTokCrawler(BaseCrawler):
 
         username = username.lstrip("@")
         url = f"https://www.tiktok.com/@{username}"
-        
+
         import asyncio
         import json
 
@@ -56,9 +56,10 @@ class TikTokCrawler(BaseCrawler):
             "yt-dlp",
             "--dump-json",
             "--no-download",
-            "--playlist-end", str(limit),
+            "--playlist-end",
+            str(limit),
             "--ignore-errors",
-            url
+            url,
         ]
 
         try:
@@ -106,21 +107,21 @@ class TikTokCrawler(BaseCrawler):
         Get comments for a TikTok video using Playwright.
         """
         await self._rate_limit()
-        
+
         username = "tiktok"
         video_id = post_id
         if ":" in post_id:
             username, video_id = post_id.split(":", 1)
-            
+
         logger.info(f"TikTok get comments for video: {video_id} by @{username}")
-        
+
         raw_comments = await self.playwright.get_comments(video_id, limit=limit, username=username)
         results = []
         for c in raw_comments:
             parsed = self._parse_playwright_comment(c, post_id)
             if parsed:
                 results.append(parsed)
-                
+
         return results
 
     # ---- Private helpers ----
@@ -128,20 +129,20 @@ class TikTokCrawler(BaseCrawler):
     def _parse_playwright_item(self, data: dict) -> Optional[CrawlResult]:
         if not data:
             return None
-        
+
         video_id = str(data.get("id", ""))
         if not video_id:
             return None
-            
+
         author = data.get("author", {})
         stats = data.get("stats", {})
         video_info = data.get("video", {})
-        
+
         username = author.get("uniqueId", "")
         post_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
-        
+
         video_url = video_info.get("playAddr") or video_info.get("downloadAddr") or post_url
-        
+
         published_at = None
         create_time = data.get("createTime")
         if create_time:
@@ -149,7 +150,7 @@ class TikTokCrawler(BaseCrawler):
                 published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
             except (ValueError, TypeError):
                 pass
-                
+
         return CrawlResult(
             platform="tiktok",
             source_id=video_id,
@@ -180,13 +181,13 @@ class TikTokCrawler(BaseCrawler):
     def _parse_playwright_comment(self, data: dict, post_id: str) -> Optional[CommentResult]:
         if not data:
             return None
-        
+
         cid = str(data.get("cid", ""))
         if not cid:
             return None
-            
+
         user = data.get("user", {})
-        
+
         published_at = None
         create_time = data.get("create_time")
         if create_time:
@@ -194,21 +195,25 @@ class TikTokCrawler(BaseCrawler):
                 published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
             except (ValueError, TypeError):
                 pass
-                
+
         return CommentResult(
             platform="tiktok",
             comment_id=cid,
             post_id=post_id,
-            parent_comment_id=str(data.get("reply_id", "")) if data.get("reply_id") != "0" else None,
+            parent_comment_id=str(data.get("reply_id", ""))
+            if data.get("reply_id") != "0"
+            else None,
             content=data.get("text", ""),
             author_id=str(user.get("uid", "")),
             author_name=user.get("nickname", ""),
             author_username=user.get("unique_id", ""),
-            author_avatar=user.get("avatar_thumb", {}).get("url_list", [""])[0] if user.get("avatar_thumb") else None,
+            author_avatar=user.get("avatar_thumb", {}).get("url_list", [""])[0]
+            if user.get("avatar_thumb")
+            else None,
             like_count=data.get("digg_count", 0),
             reply_count=data.get("reply_comment_total", 0),
             published_at=published_at,
-            raw=data
+            raw=data,
         )
 
     def _parse_tiktok_item(self, data: dict) -> Optional[CrawlResult]:
@@ -240,10 +245,7 @@ class TikTokCrawler(BaseCrawler):
 
         # Build post URL
         username = author_info.get("uniqueId", author_info.get("unique_id", ""))
-        post_url = (
-            data.get("webpage_url")
-            or f"https://www.tiktok.com/@{username}/video/{video_id}"
-        )
+        post_url = data.get("webpage_url") or f"https://www.tiktok.com/@{username}/video/{video_id}"
 
         published_at = None
         create_time = data.get("createTime", data.get("create_time"))
@@ -262,9 +264,7 @@ class TikTokCrawler(BaseCrawler):
             content_type="video",
             author_id=str(author_info.get("id", "")),
             author_name=author_info.get("nickname", ""),
-            author_username=author_info.get(
-                "uniqueId", author_info.get("unique_id", "")
-            ),
+            author_username=author_info.get("uniqueId", author_info.get("unique_id", "")),
             author_url=f"https://www.tiktok.com/@{username}" if username else None,
             like_count=stats.get("diggCount", stats.get("digg_count", 0)) or 0,
             comment_count=stats.get("commentCount", stats.get("comment_count", 0)) or 0,
@@ -279,7 +279,7 @@ class TikTokCrawler(BaseCrawler):
     def _parse_ytdlp_item(self, info: dict) -> CrawlResult:
         """Parse yt-dlp json info into CrawlResult."""
         url = info.get("webpage_url") or info.get("original_url") or ""
-        
+
         published_at = None
         ts = info.get("timestamp")
         if ts:
@@ -287,7 +287,7 @@ class TikTokCrawler(BaseCrawler):
                 published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
             except (ValueError, TypeError):
                 pass
-                
+
         return CrawlResult(
             platform="tiktok",
             source_id=info.get("id", ""),

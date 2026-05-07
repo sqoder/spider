@@ -7,12 +7,14 @@ from loguru import logger
 
 from app.core.config import get_settings
 
+
 class BrowserManager:
     """
     Manages browser instances using Scrapling's StealthyFetcher.
     Provides advanced anti-bot bypass and unified interface for UI-based crawlers.
     """
-    _instance: Optional['BrowserManager'] = None
+
+    _instance: Optional["BrowserManager"] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -42,22 +44,24 @@ class BrowserManager:
             return cookies
 
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 for line in f:
-                    if not line.strip() or line.startswith('#'):
+                    if not line.strip() or line.startswith("#"):
                         continue
-                    parts = line.split('\t')
+                    parts = line.split("\t")
                     if len(parts) < 7:
                         continue
 
-                    cookies.append({
-                        'name': parts[5].strip(),
-                        'value': parts[6].strip(),
-                        'domain': parts[0].strip(),
-                        'path': parts[2].strip(),
-                        'expires': int(parts[4].strip()) if parts[4].strip().isdigit() else -1,
-                        'secure': parts[3].strip().upper() == 'TRUE',
-                    })
+                    cookies.append(
+                        {
+                            "name": parts[5].strip(),
+                            "value": parts[6].strip(),
+                            "domain": parts[0].strip(),
+                            "path": parts[2].strip(),
+                            "expires": int(parts[4].strip()) if parts[4].strip().isdigit() else -1,
+                            "secure": parts[3].strip().upper() == "TRUE",
+                        }
+                    )
             self._cookie_cache[filepath] = (current_mtime, cookies)
         except Exception as e:
             logger.error(f"Failed to parse cookies file: {e}")
@@ -79,18 +83,18 @@ class BrowserManager:
             # Scrapling StealthyFetcher handles browser launch internally
             # We map some common playwright kwargs to Scrapling if needed
             fetcher = StealthyFetcher(
-                headless=kwargs.get('headless', True),
-                proxy=kwargs.get('proxy'),
-                **kwargs
+                headless=kwargs.get("headless", True), proxy=kwargs.get("proxy"), **kwargs
             )
-            
+
             if cookies:
                 # Scrapling fetchers can take cookies in initialization or via sessions
-                # For now we use the context directly if accessible, 
+                # For now we use the context directly if accessible,
                 # or rely on Scrapling's session management.
                 # Note: Scrapling's StealthyFetcher is a wrapper around Playwright.
-                logger.info(f"StealthyFetcher created with {len(cookies)} cookies available (injection logic pending Scrapling API confirmation).")
-            
+                logger.info(
+                    f"StealthyFetcher created with {len(cookies)} cookies available (injection logic pending Scrapling API confirmation)."
+                )
+
             self._fetchers.append(fetcher)
             return fetcher
         except Exception:
@@ -101,9 +105,9 @@ class BrowserManager:
         """Close a StealthyFetcher instance."""
         try:
             # Scrapling fetchers have a quit/close method usually
-            if hasattr(fetcher, 'quit'):
+            if hasattr(fetcher, "quit"):
                 fetcher.quit()
-            elif hasattr(fetcher, 'close'):
+            elif hasattr(fetcher, "close"):
                 fetcher.close()
         except Exception as e:
             logger.warning(f"Failed to close fetcher: {e}")
@@ -126,7 +130,7 @@ class BrowserManager:
         """Compatibility alias for closing a context or fetcher."""
         if isinstance(target, StealthyFetcher):
             await self.close_fetcher(target)
-        elif hasattr(target, 'context'):
+        elif hasattr(target, "context"):
             # It's likely a Playwright Page
             context = target.context
             try:
@@ -137,11 +141,12 @@ class BrowserManager:
         else:
             logger.warning(f"Unknown target type for close_context: {type(target)}")
 
+
 # Compatibility alias for existing code expecting new_page
 async def new_page_deprecated(cookies_file: Optional[str] = None, **kwargs):
     logger.warning("new_page is deprecated, use new_fetcher instead.")
     return await browser_manager.new_fetcher(cookies_file, **kwargs)
 
+
 browser_manager = BrowserManager()
 browser_manager.new_page = new_page_deprecated
-

@@ -25,7 +25,4 @@ class Base(DeclarativeBase):
 
     def to_dict(self):
         """Convert the model instance to a dictionary."""
-        return {
-            field.name: getattr(self, field.name)
-            for field in self.__table__.columns
-        }
+        return {field.name: getattr(self, field.name) for field in self.__table__.columns}

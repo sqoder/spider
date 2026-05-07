@@ -20,11 +20,11 @@ class VisualService:
     def generate_word_cloud(self, text: str, output_filename: str) -> Optional[Path]:
         """
         Generate a word cloud from text.
-        
+
         Args:
             text: The text to process
             output_filename: Filename to save the image (e.g., 'wordcloud.png')
-            
+
         Returns:
             Path to the generated image, or None if failed
         """
@@ -37,7 +37,9 @@ class VisualService:
             from wordcloud import WordCloud
             import matplotlib.pyplot as plt
         except ImportError:
-            logger.warning("wordcloud/matplotlib/jieba not installed. Skipping word cloud generation.")
+            logger.warning(
+                "wordcloud/matplotlib/jieba not installed. Skipping word cloud generation."
+            )
             return None
 
         try:
@@ -48,21 +50,21 @@ class VisualService:
             # Generate word cloud
             # Use a default font that supports Chinese if possible, or fallback to default
             font_path = self._find_font()
-            
+
             wc = WordCloud(
                 font_path=font_path,
                 width=1200,
                 height=800,
                 background_color="white",
                 max_words=200,
-                collocations=False
+                collocations=False,
             )
             wc.generate(processed_text)
 
             # Save
             output_path = self.output_dir / output_filename
             wc.to_file(str(output_path))
-            
+
             logger.info(f"Word cloud generated: {output_path}")
             return output_path
         except Exception as e:
@@ -73,16 +75,17 @@ class VisualService:
         """Try to find a suitable font path for word cloud (supporting Chinese)."""
         # Common locations for fonts on different systems
         paths = [
-            "/System/Library/Fonts/PingFang.ttc", # macOS
-            "/System/Library/Fonts/STHeiti Light.ttc", # macOS
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", # Linux
-            "C:\\Windows\\Fonts\\msyh.ttc", # Windows
-            "C:\\Windows\\Fonts\\simhei.ttf", # Windows
+            "/System/Library/Fonts/PingFang.ttc",  # macOS
+            "/System/Library/Fonts/STHeiti Light.ttc",  # macOS
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",  # Linux
+            "C:\\Windows\\Fonts\\msyh.ttc",  # Windows
+            "C:\\Windows\\Fonts\\simhei.ttf",  # Windows
         ]
         for p in paths:
             if os.path.exists(p):
                 return p
         return None
+
 
 # Global visual service instance
 visual_service = VisualService()

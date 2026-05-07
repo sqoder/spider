@@ -16,7 +16,7 @@ class StoreFactory:
     def create_store(platform: str, crawler_type: str) -> BaseStore:
         """
         Create a store instance.
-        
+
         Args:
             platform: e.g., 'youtube', 'tiktok'
             crawler_type: e.g., 'search', 'detail', 'user_posts'

@@ -44,9 +44,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     log_level: str = "DEBUG"
-    
+
     cors_origins: str = "http://localhost:3000"
-    
+
     auto_create_tables: bool = False
     enabled_platforms: str = "youtube,reddit"
 

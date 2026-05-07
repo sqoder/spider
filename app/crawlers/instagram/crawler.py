@@ -26,14 +26,14 @@ class InstagramCrawler(BaseCrawler):
             timeout=30000,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            }
+            },
         )
         logger.info("Instagram crawler initialized with Scrapling Fetcher")
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """
         Search Instagram by hashtag.
-        Note: Instagram search is heavily protected and requires login. 
+        Note: Instagram search is heavily protected and requires login.
         """
         await self._rate_limit()
         logger.warning("Instagram hashtag search is restricted and requires login. Skipping.")
@@ -42,7 +42,7 @@ class InstagramCrawler(BaseCrawler):
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get posts from an Instagram user's public profile using Scrapling Fetcher."""
         await self._rate_limit()
-        username = username.lstrip('@')
+        username = username.lstrip("@")
         logger.info(f"Instagram user posts: '{username}', limit={limit}")
 
         url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
@@ -52,11 +52,12 @@ class InstagramCrawler(BaseCrawler):
         }
 
         try:
+
             def _do_fetch():
                 return self._fetcher.get(url, headers=headers)
 
             response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
-            
+
             if response.status != 200:
                 logger.warning(f"Instagram API failed with status {response.status}")
                 return []
@@ -104,6 +105,7 @@ class InstagramCrawler(BaseCrawler):
         embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
 
         try:
+
             def _do_fetch():
                 return self._fetcher.get(embed_url)
 
@@ -119,7 +121,7 @@ class InstagramCrawler(BaseCrawler):
                 start_brace = sub.find("{")
                 if start_brace != -1:
                     raw_to_clean = sub[start_brace:]
-                    raw_clean = raw_to_clean.replace('\\"', '"').replace('\\/', '/')
+                    raw_clean = raw_to_clean.replace('\\"', '"').replace("\\/", "/")
                     try:
                         data, decode_idx = json.JSONDecoder().raw_decode(raw_clean)
                         media_data = data.get("shortcode_media", {})
@@ -208,10 +210,12 @@ class InstagramCrawler(BaseCrawler):
             author_url=f"https://www.instagram.com/{username}/" if username else None,
             like_count=data.get("edge_media_preview_like", {}).get(
                 "count", data.get("like_count", data.get("edge_liked_by", {}).get("count", 0))
-            ) or 0,
+            )
+            or 0,
             comment_count=data.get("edge_media_to_comment", {}).get(
                 "count", data.get("comment_count", 0)
-            ) or 0,
+            )
+            or 0,
             view_count=data.get("video_view_count", 0) or 0,
             media=media,
             thumbnail_url=data.get("thumbnail_src", data.get("display_url")),
@@ -221,4 +225,3 @@ class InstagramCrawler(BaseCrawler):
 
     async def close(self) -> None:
         pass
-

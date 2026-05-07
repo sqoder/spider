@@ -17,6 +17,7 @@ from app.core.config import get_settings
 # Module-level cookie cache: {filepath: (mtime, cookies_dict)}
 _innertube_cookie_cache: Dict[str, Tuple[float, dict]] = {}
 
+
 class InnertubeClient:
     def __init__(self):
         self.settings = get_settings()
@@ -29,14 +30,16 @@ class InnertubeClient:
 
         # Load cookies with caching (shared across instances)
         self.cookies = None
-        if self.settings.youtube_cookies_file and os.path.exists(self.settings.youtube_cookies_file):
+        if self.settings.youtube_cookies_file and os.path.exists(
+            self.settings.youtube_cookies_file
+        ):
             self.cookies = self._parse_cookies_for_scrapling(self.settings.youtube_cookies_file)
 
         # Initialize Scrapling Fetcher
         self.fetcher = Fetcher(
             proxy=self.proxy,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            timeout=30000
+            timeout=30000,
         )
         self.api_key = None
         self.context = None
@@ -53,11 +56,11 @@ class InnertubeClient:
 
         cookies = {}
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 for line in f:
-                    if not line.strip() or line.startswith('#'):
+                    if not line.strip() or line.startswith("#"):
                         continue
-                    parts = line.split('\t')
+                    parts = line.split("\t")
                     if len(parts) >= 7:
                         cookies[parts[5].strip()] = parts[6].strip()
             _innertube_cookie_cache[filepath] = (current_mtime, cookies)
@@ -100,43 +103,45 @@ class InnertubeClient:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _get_initial_data(self, video_id: str):
         url = f"https://www.youtube.com/watch?v={video_id}"
-        
+
         def _do_fetch():
             return self.fetcher.get(url, cookies=self.cookies)
 
         response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
         html = response.text
-        
+
         # Extract API Key - Broaden regex
         api_key_match = re.search(r'["\']INNERTUBE_API_KEY["\']\s*:\s*["\']([^"\']+)["\']', html)
         if not api_key_match:
             # More targeted fallback: look for common Innertube key patterns
             api_key_match = re.search(r'["\']key["\']\s*:\s*["\']([A-Za-z0-9_-]{30,})["\']', html)
-            
+
         if not api_key_match:
             logger.error(f"Failed to find API key in HTML for {video_id}")
             raise Exception("Could not find INNERTUBE_API_KEY")
-        
+
         self.api_key = api_key_match.group(1)
-        
+
         # Extract Context - More robust extraction
         self.context = self._extract_json(html, r'["\']INNERTUBE_CONTEXT["\']\s*:\s*\{')
         if not self.context:
-            self.context = self._extract_json(html, r'ytcfg\.set\(\{.*?"INNERTUBE_CONTEXT"\s*:\s*\{')
-            
+            self.context = self._extract_json(
+                html, r'ytcfg\.set\(\{.*?"INNERTUBE_CONTEXT"\s*:\s*\{'
+            )
+
         if not self.context:
             logger.error(f"Failed to find context in HTML for {video_id}")
             raise Exception("Could not find INNERTUBE_CONTEXT")
 
         # Extract initial data for continuation
-        yt_data = self._extract_json(html, r'var ytInitialData = \{')
+        yt_data = self._extract_json(html, r"var ytInitialData = \{")
         if not yt_data:
             yt_data = self._extract_json(html, r'window\["ytInitialData"\]\s*=\s*\{')
-            
+
         if not yt_data:
             logger.error(f"Failed to find ytInitialData in HTML for {video_id}")
             raise Exception("Could not find ytInitialData")
-        
+
         return yt_data
 
     async def get_comments(self, video_id: str, limit: int = 100) -> list[CommentResult]:
@@ -155,7 +160,9 @@ class InnertubeClient:
 
             while continuation_token and len(results) < limit:
                 data = await self._fetch_next(continuation_token)
-                new_comments, continuation_token, reply_tokens = self._parse_comment_data(data, entity_lookup_override=None)
+                new_comments, continuation_token, reply_tokens = self._parse_comment_data(
+                    data, entity_lookup_override=None
+                )
                 results.extend(new_comments)
                 pending_reply_tokens.extend(reply_tokens)
 
@@ -163,7 +170,9 @@ class InnertubeClient:
                     break
 
             # Fetch reply continuations for threads with more replies
-            logger.info(f"[Innertube] Found {len(pending_reply_tokens)} threads with reply continuations")
+            logger.info(
+                f"[Innertube] Found {len(pending_reply_tokens)} threads with reply continuations"
+            )
             for parent_id, token in pending_reply_tokens:
                 if len(results) >= limit:
                     break
@@ -171,10 +180,14 @@ class InnertubeClient:
                 while token and len(results) < limit:
                     data = await self._fetch_next(token)
                     if not data:
-                        logger.warning(f"[Innertube] Reply continuation returned empty data for thread {parent_id}")
+                        logger.warning(
+                            f"[Innertube] Reply continuation returned empty data for thread {parent_id}"
+                        )
                         break
                     new_replies, token = self._parse_reply_continuation_data(data, parent_id)
-                    logger.debug(f"[Innertube] Fetched {len(new_replies)} more replies for thread {parent_id}, has_more={token is not None}")
+                    logger.debug(
+                        f"[Innertube] Fetched {len(new_replies)} more replies for thread {parent_id}, has_more={token is not None}"
+                    )
                     results.extend(new_replies)
                     if not new_replies:
                         break
@@ -182,12 +195,14 @@ class InnertubeClient:
             return results[:limit]
         except Exception as e:
             import traceback
+
             logger.error(f"Innertube error for {video_id}: {str(e)}")
             logger.debug(traceback.format_exc())
             return []
 
     def _extract_initial_continuation(self, yt_data):
         """Recursively find the first comment continuation token."""
+
         def find_token(obj):
             if isinstance(obj, dict):
                 # Look for the specific continuation item for comments
@@ -197,7 +212,7 @@ class InnertubeClient:
                     if "token" in command:
                         # Ensure it is a comment continuation (usually has specific patterns)
                         return command["token"]
-                
+
                 # Check for itemSectionRenderer with comments
                 if obj.get("sectionIdentifier") == "comment-item-section":
                     # Deep search inside this specific section
@@ -205,11 +220,13 @@ class InnertubeClient:
 
                 for v in obj.values():
                     res = find_token(v)
-                    if res: return res
+                    if res:
+                        return res
             elif isinstance(obj, list):
                 for item in obj:
                     res = find_token(item)
-                    if res: return res
+                    if res:
+                        return res
             return None
 
         # Start search from contents
@@ -217,23 +234,22 @@ class InnertubeClient:
         if not token:
             # Fallback: check engagement panels (sometimes comments live there in mobile/new UI)
             token = find_token(yt_data.get("engagementPanels", []))
-            
+
         return token
 
     async def _fetch_next(self, token: str):
         url = f"https://www.youtube.com/youtubei/v1/next?key={self.api_key}"
-        payload = {
-            "context": self.context,
-            "continuation": token
-        }
+        payload = {"context": self.context, "continuation": token}
 
         # Add mandatory headers for Innertube
         headers = {
             "Content-Type": "application/json",
             "X-Youtube-Client-Name": str(self.context.get("client", {}).get("clientName", "1")),
-            "X-Youtube-Client-Version": self.context.get("client", {}).get("clientVersion", "2.20240210.01.00"),
+            "X-Youtube-Client-Version": self.context.get("client", {}).get(
+                "clientVersion", "2.20240210.01.00"
+            ),
             "Origin": "https://www.youtube.com",
-            "Referer": "https://www.youtube.com/"
+            "Referer": "https://www.youtube.com/",
         }
 
         def _do_fetch():
@@ -242,14 +258,19 @@ class InnertubeClient:
         response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
 
         if response.status_code != 200:
-            logger.error(f"Innertube API failed with status {response.status_code}: {response.text[:200]}")
+            logger.error(
+                f"Innertube API failed with status {response.status_code}: {response.text[:200]}"
+            )
             return {}
 
         try:
             return response.json()
         except Exception as e:
-            logger.error(f"Failed to parse Innertube JSON. Status: {response.status_code}, Body: {response.text[:200]}")
+            logger.error(
+                f"Failed to parse Innertube JSON. Status: {response.status_code}, Body: {response.text[:200]}"
+            )
             return {}
+
     @staticmethod
     def _build_entity_lookup(data: dict) -> dict:
         """Build key -> entity mapping from frameworkUpdates mutations."""
@@ -282,7 +303,9 @@ class InnertubeClient:
         entity_lookup = entity_lookup_override or self._build_entity_lookup(data)
 
         for endpoint in endpoints:
-            command = endpoint.get("reloadContinuationItemsCommand") or endpoint.get("appendContinuationItemsAction")
+            command = endpoint.get("reloadContinuationItemsCommand") or endpoint.get(
+                "appendContinuationItemsAction"
+            )
             if not command:
                 if "continuationItems" in endpoint:
                     command = endpoint
@@ -320,7 +343,9 @@ class InnertubeClient:
                                 parent_id = comment_result.source_id
                                 for reply_item in replies:
                                     if "commentViewModel" in reply_item:
-                                        r_cvm = reply_item["commentViewModel"].get("commentViewModel", {})
+                                        r_cvm = reply_item["commentViewModel"].get(
+                                            "commentViewModel", {}
+                                        )
                                         r_entity = entity_lookup.get(r_cvm.get("commentKey"), {})
                                         if r_entity:
                                             reply_result = self._parse_comment_entity(
@@ -348,7 +373,9 @@ class InnertubeClient:
                                         cmd = ep.get("continuationCommand", {})
                                         if "token" in cmd:
                                             reply_tokens.append((parent_id, cmd["token"]))
-                                            logger.debug(f"[Innertube] Reply continuation found (entity) for thread {parent_id}: token={cmd['token'][:40]}...")
+                                            logger.debug(
+                                                f"[Innertube] Reply continuation found (entity) for thread {parent_id}: token={cmd['token'][:40]}..."
+                                            )
                         else:
                             # Fallback: try old format
                             comment_renderer = thread.get("comment", {}).get("commentRenderer", {})
@@ -383,7 +410,9 @@ class InnertubeClient:
                                         cmd = ep.get("continuationCommand", {})
                                         if "token" in cmd:
                                             reply_tokens.append((parent_id, cmd["token"]))
-                                            logger.debug(f"[Innertube] Reply continuation found (old entity fallback) for thread {parent_id}")
+                                            logger.debug(
+                                                f"[Innertube] Reply continuation found (old entity fallback) for thread {parent_id}"
+                                            )
                     else:
                         # Old YouTube API format: comment -> commentRenderer
                         comment_renderer = thread.get("comment", {}).get("commentRenderer", {})
@@ -424,7 +453,9 @@ class InnertubeClient:
                                 cmd = ep.get("continuationCommand", {})
                                 if "token" in cmd:
                                     reply_tokens.append((parent_id, cmd["token"]))
-                                    logger.debug(f"[Innertube] Reply continuation found (old renderer) for thread {parent_id}")
+                                    logger.debug(
+                                        f"[Innertube] Reply continuation found (old renderer) for thread {parent_id}"
+                                    )
 
                 elif "continuationItemRenderer" in item:
                     continuation = item["continuationItemRenderer"]
@@ -455,12 +486,14 @@ class InnertubeClient:
             items = action.get("continuationItems", [])
             for item in items:
                 if "commentRenderer" in item:
-                    replies.append(self._parse_comment_renderer(
-                        item["commentRenderer"],
-                        raw_source=item,
-                        thread_position=position,
-                        parent_comment_id=parent_id,
-                    ))
+                    replies.append(
+                        self._parse_comment_renderer(
+                            item["commentRenderer"],
+                            raw_source=item,
+                            thread_position=position,
+                            parent_comment_id=parent_id,
+                        )
+                    )
                     position += 1
                 elif "commentViewModel" in item:
                     cvm = item["commentViewModel"].get("commentViewModel", {})
@@ -587,11 +620,7 @@ class InnertubeClient:
         like_count = self._parse_count(like_count_text)
         author_endpoint = renderer.get("authorEndpoint", {}).get("browseEndpoint", {})
         author_handle = author_endpoint.get("canonicalBaseUrl", "").rstrip("/").split("/")[-1]
-        author_url = (
-            f"https://www.youtube.com/{author_handle}"
-            if author_handle
-            else None
-        )
+        author_url = f"https://www.youtube.com/{author_handle}" if author_handle else None
         thumbnails = renderer.get("authorThumbnail", {}).get("thumbnails", [])
         author_avatar = thumbnails[-1].get("url") if thumbnails else None
         author_badges = self._badges(renderer.get("authorCommentBadge"))

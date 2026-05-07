@@ -34,27 +34,30 @@ class FileStoreImplement(BaseStore):
         subdir = settings.save_data_subdir or self.file_type
         platform_dir = self.base_dir / self.platform / subdir
         platform_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filename = f"{self.crawler_type}_{item_type}.{self.file_type}"
         return platform_dir / filename
 
     async def store_content(self, items: List[dict]):
-        if not items: return
+        if not items:
+            return
         path = self._get_file_path("contents")
         await self._write(path, items)
 
     async def store_comment(self, post_id: str, items: List[dict]):
-        if not items: return
+        if not items:
+            return
         # Add post_id to comments if not present
         for item in items:
             if "post_id" not in item:
                 item["post_id"] = post_id
-        
+
         path = self._get_file_path("comments")
         await self._write(path, items)
 
     async def store_creator(self, items: List[dict]):
-        if not items: return
+        if not items:
+            return
         path = self._get_file_path("creators")
         await self._write(path, items)
 
@@ -84,9 +87,10 @@ class FileStoreImplement(BaseStore):
                     flat[k] = json.dumps(v, ensure_ascii=False)
             flattened.append(flat)
 
-        if not flattened: return
+        if not flattened:
+            return
         keys = flattened[0].keys()
-        
+
         with open(path, "a", newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=keys)
             if not file_exists:
@@ -101,7 +105,7 @@ class FileStoreImplement(BaseStore):
                     existing_data = json.load(f)
             except:
                 pass
-        
+
         existing_data.extend(items)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=4)
@@ -109,6 +113,7 @@ class FileStoreImplement(BaseStore):
     async def _write_excel(self, path: Path, items: List[dict]):
         try:
             import pandas as pd
+
             # Flatten for excel
             flattened = []
             for item in items:
@@ -117,7 +122,7 @@ class FileStoreImplement(BaseStore):
                     if isinstance(v, (dict, list)):
                         flat[k] = json.dumps(v, ensure_ascii=False)
                 flattened.append(flat)
-                
+
             df = pd.DataFrame(flattened)
             if path.exists():
                 try:

@@ -235,10 +235,10 @@ class VisibleYouTubeCrawler(BaseCrawler):
         view_count_text = cls._text(renderer.get("viewCountText"))
         published_text = cls._text(renderer.get("publishedTimeText"))
         description_snippet = cls._description_snippet(renderer)
-        is_live = bool(
-            renderer.get("badges")
-            and any("live" in badge.lower() for badge in card_badges)
-        ) or "watching" in view_count_text.lower()
+        is_live = (
+            bool(renderer.get("badges") and any("live" in badge.lower() for badge in card_badges))
+            or "watching" in view_count_text.lower()
+        )
         is_upcoming = bool(renderer.get("upcomingEventData"))
         is_short = card_type == "short" or "/shorts/" in (url or "")
 
@@ -310,15 +310,10 @@ class VisibleYouTubeCrawler(BaseCrawler):
         ytdlp_info = ytdlp_info or {}
         primary = cls._first_renderer(yt_data, "videoPrimaryInfoRenderer") or {}
         secondary = cls._first_renderer(yt_data, "videoSecondaryInfoRenderer") or {}
-        owner = (
-            secondary.get("owner", {})
-            .get("videoOwnerRenderer", {})
-        )
+        owner = secondary.get("owner", {}).get("videoOwnerRenderer", {})
 
         video_id = (
-            yt_data.get("currentVideoEndpoint", {})
-            .get("watchEndpoint", {})
-            .get("videoId")
+            yt_data.get("currentVideoEndpoint", {}).get("watchEndpoint", {}).get("videoId")
             or ytdlp_info.get("id")
             or cls._extract_video_id(url)
             or ""
@@ -326,27 +321,21 @@ class VisibleYouTubeCrawler(BaseCrawler):
         canonical_url = f"{YOUTUBE_ORIGIN}/watch?v={video_id}" if video_id else url
         title = cls._text(primary.get("title")) or ytdlp_info.get("title")
         description_full = (
-            cls._text(secondary.get("description"))
-            or ytdlp_info.get("description")
-            or ""
+            cls._text(secondary.get("description")) or ytdlp_info.get("description") or ""
         )
         view_count_text = cls._text(
-            primary.get("viewCount", {})
-            .get("videoViewCountRenderer", {})
-            .get("viewCount")
+            primary.get("viewCount", {}).get("videoViewCountRenderer", {}).get("viewCount")
         ) or cls._count_text(ytdlp_info.get("view_count"), "views")
-        like_count_text = cls._like_text(primary) or cls._count_text(
-            ytdlp_info.get("like_count")
-        )
+        like_count_text = cls._like_text(primary) or cls._count_text(ytdlp_info.get("like_count"))
         comment_count_text = cls._comment_count_text(yt_data) or cls._count_text(
             ytdlp_info.get("comment_count"), "comments"
         )
-        published_text = cls._text(primary.get("dateText")) or ytdlp_info.get(
-            "upload_date"
-        )
+        published_text = cls._text(primary.get("dateText")) or ytdlp_info.get("upload_date")
 
         channel_name = cls._text(owner.get("title")) or ytdlp_info.get("channel")
-        channel_url = cls._absolute_youtube_url(cls._endpoint_url(owner.get("navigationEndpoint", {}))) or ytdlp_info.get("channel_url")
+        channel_url = cls._absolute_youtube_url(
+            cls._endpoint_url(owner.get("navigationEndpoint", {}))
+        ) or ytdlp_info.get("channel_url")
         channel_handle = cls._channel_handle(channel_url) or ytdlp_info.get("uploader_id")
         channel_avatar = cls._last_thumbnail_url(owner.get("thumbnail")) or ytdlp_info.get(
             "channel_thumbnail"
@@ -414,14 +403,8 @@ class VisibleYouTubeCrawler(BaseCrawler):
             view_count=visible_data["view_count"],
             thumbnail_url=thumbnails[-1] if thumbnails else ytdlp_info.get("thumbnail"),
             tags=ytdlp_info.get("tags") or hashtags,
-            subtitles=[
-                {"language": lang, "type": "manual"}
-                for lang in captions["manual"]
-            ]
-            + [
-                {"language": lang, "type": "automatic"}
-                for lang in captions["automatic"]
-            ],
+            subtitles=[{"language": lang, "type": "manual"} for lang in captions["manual"]]
+            + [{"language": lang, "type": "automatic"} for lang in captions["automatic"]],
             media=[
                 {
                     "type": "video",
@@ -554,9 +537,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         except Exception as exc:
             return {"error": str(exc)}
 
-    async def _get_comments_from_dom(
-        self, video_id: str, limit: int
-    ) -> list[CommentResult]:
+    async def _get_comments_from_dom(self, video_id: str, limit: int) -> list[CommentResult]:
         url = f"{YOUTUBE_ORIGIN}/watch?v={video_id}"
         fetcher = await self._new_fetcher()
         page = fetcher.page
@@ -605,9 +586,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
                         continue
                     seen.add(comment_id)
                     position = len(results) + 1
-                    results.append(
-                        self._parse_dom_comment(row, comment_id, position, url, limit)
-                    )
+                    results.append(self._parse_dom_comment(row, comment_id, position, url, limit))
                     added += 1
                     if len(results) >= limit:
                         return results[:limit]
@@ -666,9 +645,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         return found
 
     @classmethod
-    def _first_renderer(
-        cls, value: Any, renderer_name: str
-    ) -> dict[str, Any] | None:
+    def _first_renderer(cls, value: Any, renderer_name: str) -> dict[str, Any] | None:
         items = cls._find_all_renderers(value, renderer_name)
         return items[0] if items else None
 
@@ -709,11 +686,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
     def _endpoint_url(endpoint: dict[str, Any]) -> str | None:
         if not endpoint:
             return None
-        metadata_url = (
-            endpoint.get("commandMetadata", {})
-            .get("webCommandMetadata", {})
-            .get("url")
-        )
+        metadata_url = endpoint.get("commandMetadata", {}).get("webCommandMetadata", {}).get("url")
         if metadata_url:
             return metadata_url
         if endpoint.get("watchEndpoint", {}).get("videoId"):
@@ -812,9 +785,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         if not match:
             return 0
         value = float(match.group(1))
-        multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(
-            match.group(2), 1
-        )
+        multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2), 1)
         return int(value * multiplier)
 
     @staticmethod
@@ -869,17 +840,12 @@ class VisibleYouTubeCrawler(BaseCrawler):
 
     @classmethod
     def _like_text(cls, primary: dict[str, Any]) -> str:
-        buttons = (
-            primary.get("videoActions", {})
-            .get("menuRenderer", {})
-            .get("topLevelButtons", [])
-        )
+        buttons = primary.get("videoActions", {}).get("menuRenderer", {}).get("topLevelButtons", [])
         for button in buttons:
             segmented = button.get("segmentedLikeDislikeButtonRenderer", {})
-            like_renderer = (
-                segmented.get("likeButton", {}).get("toggleButtonRenderer", {})
-                or button.get("toggleButtonRenderer", {})
-            )
+            like_renderer = segmented.get("likeButton", {}).get(
+                "toggleButtonRenderer", {}
+            ) or button.get("toggleButtonRenderer", {})
             text = cls._text(
                 like_renderer.get("defaultText")
                 or like_renderer.get("toggledText")
@@ -896,11 +862,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
 
     @classmethod
     def _engagement_buttons(cls, primary: dict[str, Any]) -> list[dict[str, str]]:
-        buttons = (
-            primary.get("videoActions", {})
-            .get("menuRenderer", {})
-            .get("topLevelButtons", [])
-        )
+        buttons = primary.get("videoActions", {}).get("menuRenderer", {}).get("topLevelButtons", [])
         results = []
         for button in buttons:
             label = cls._text(button)
@@ -939,9 +901,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             return None
 
     @classmethod
-    def _parse_ytdlp_info(
-        cls, info: dict[str, Any], method: str
-    ) -> CrawlResult:
+    def _parse_ytdlp_info(cls, info: dict[str, Any], method: str) -> CrawlResult:
         url = (
             info.get("original_url")
             or info.get("webpage_url")

@@ -22,6 +22,7 @@ def _parse_upload_date(dt_str: Optional[str]) -> Optional[datetime]:
         pass
     return None
 
+
 class YtdlpYouTubeCrawler(BaseCrawler):
     platform = "youtube"
 
@@ -33,6 +34,7 @@ class YtdlpYouTubeCrawler(BaseCrawler):
     def _get_visible_crawler(self):
         if self._visible_crawler is None:
             from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+
             self._visible_crawler = VisibleYouTubeCrawler()
         return self._visible_crawler
 
@@ -42,11 +44,11 @@ class YtdlpYouTubeCrawler(BaseCrawler):
 
         search_query = f"ytsearch{limit}:{keyword}"
         items = await self.ytdlp.extract_multiple_info(search_query)
-        
+
         results = []
         for info in items:
             results.append(self._parse_info(info))
-            
+
         return results
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
@@ -69,16 +71,22 @@ class YtdlpYouTubeCrawler(BaseCrawler):
         return await self._get_visible_crawler().get_comments(post_id, limit)
 
     def _parse_info(self, info: dict) -> CrawlResult:
-        url = info.get("original_url") or info.get("webpage_url") or f"https://www.youtube.com/watch?v={info.get('id')}"
-        
+        url = (
+            info.get("original_url")
+            or info.get("webpage_url")
+            or f"https://www.youtube.com/watch?v={info.get('id')}"
+        )
+
         # Extract chapters
         chapters = []
         for chapter in info.get("chapters") or []:
-            chapters.append({
-                "start_time": chapter.get("start_time"),
-                "end_time": chapter.get("end_time"),
-                "title": chapter.get("title")
-            })
+            chapters.append(
+                {
+                    "start_time": chapter.get("start_time"),
+                    "end_time": chapter.get("end_time"),
+                    "title": chapter.get("title"),
+                }
+            )
 
         return CrawlResult(
             platform="youtube",
@@ -95,7 +103,9 @@ class YtdlpYouTubeCrawler(BaseCrawler):
             comment_count=info.get("comment_count", 0) or 0,
             view_count=info.get("view_count", 0) or 0,
             thumbnail_url=info.get("thumbnail"),
-            author_avatar=info.get("avatar") or info.get("channel_thumbnail") or info.get("channel_avatar"),
+            author_avatar=info.get("avatar")
+            or info.get("channel_thumbnail")
+            or info.get("channel_avatar"),
             tags=info.get("tags", []),
             media=[
                 {
@@ -105,7 +115,8 @@ class YtdlpYouTubeCrawler(BaseCrawler):
                     "formats_available": len(info.get("formats", [])),
                     "chapters": chapters,
                     "categories": info.get("categories", []),
-                    "subtitles": list(info.get("subtitles", {}).keys()) + list(info.get("automatic_captions", {}).keys())
+                    "subtitles": list(info.get("subtitles", {}).keys())
+                    + list(info.get("automatic_captions", {}).keys()),
                 }
             ],
             published_at=_parse_upload_date(info.get("upload_date")),

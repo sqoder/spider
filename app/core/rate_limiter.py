@@ -37,8 +37,7 @@ class RateLimiter:
             "last_refill": time.monotonic(),
         }
         logger.debug(
-            f"Rate limiter configured for '{platform}': "
-            f"{max_requests} req / {period_seconds}s"
+            f"Rate limiter configured for '{platform}': {max_requests} req / {period_seconds}s"
         )
 
     async def acquire(self, platform: str, cost: int = 1) -> bool:
@@ -64,12 +63,8 @@ class RateLimiter:
                 return True
 
             # Calculate wait time
-            wait_time = (
-                bucket["period"] * (cost - bucket["tokens"]) / bucket["max_requests"]
-            )
-            logger.warning(
-                f"Rate limit reached for '{platform}', waiting {wait_time:.1f}s"
-            )
+            wait_time = bucket["period"] * (cost - bucket["tokens"]) / bucket["max_requests"]
+            logger.warning(f"Rate limit reached for '{platform}', waiting {wait_time:.1f}s")
 
         # Wait outside the lock
         await asyncio.sleep(wait_time)
@@ -107,18 +102,10 @@ def setup_rate_limiter() -> RateLimiter:
 
     settings = get_settings()
 
-    rate_limiter.configure(
-        "youtube", settings.youtube_rate_limit, settings.youtube_rate_period
-    )
-    rate_limiter.configure(
-        "reddit", settings.reddit_rate_limit, settings.reddit_rate_period
-    )
-    rate_limiter.configure(
-        "tiktok", settings.tiktok_rate_limit, settings.tiktok_rate_period
-    )
-    rate_limiter.configure(
-        "default", settings.default_rate_limit, settings.default_rate_period
-    )
+    rate_limiter.configure("youtube", settings.youtube_rate_limit, settings.youtube_rate_period)
+    rate_limiter.configure("reddit", settings.reddit_rate_limit, settings.reddit_rate_period)
+    rate_limiter.configure("tiktok", settings.tiktok_rate_limit, settings.tiktok_rate_period)
+    rate_limiter.configure("default", settings.default_rate_limit, settings.default_rate_period)
 
     logger.info("Rate limiter initialized for all platforms")
     return rate_limiter

@@ -49,13 +49,9 @@ class YouTubeCrawler(BaseCrawler):
                     break
 
                 # Get video IDs for detailed info
-                video_ids = [
-                    item["id"]["videoId"] for item in items if item["id"].get("videoId")
-                ]
+                video_ids = [item["id"]["videoId"] for item in items if item["id"].get("videoId")]
                 details_response = await self.api.get_video_details(video_ids)
-                details_map = {
-                    item["id"]: item for item in details_response.get("items", [])
-                }
+                details_map = {item["id"]: item for item in details_response.get("items", [])}
 
                 for item in items:
                     video_id = item["id"].get("videoId")
@@ -76,6 +72,7 @@ class YouTubeCrawler(BaseCrawler):
         except QuotaExhaustedError:
             logger.warning("YouTube API Quota exhausted! Falling back to yt-dlp for search.")
             from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+
             crawler = YtdlpYouTubeCrawler()
             return await crawler.search(keyword, limit)
 
@@ -110,13 +107,9 @@ class YouTubeCrawler(BaseCrawler):
             if not items:
                 break
 
-            video_ids = [
-                item["id"]["videoId"] for item in items if item["id"].get("videoId")
-            ]
+            video_ids = [item["id"]["videoId"] for item in items if item["id"].get("videoId")]
             details_response = await self.api.get_video_details(video_ids)
-            details_map = {
-                item["id"]: item for item in details_response.get("items", [])
-            }
+            details_map = {item["id"]: item for item in details_response.get("items", [])}
 
             for item in items:
                 video_id = item["id"].get("videoId")
@@ -195,7 +188,7 @@ class YouTubeCrawler(BaseCrawler):
                     top_comment_node = item["snippet"]["topLevelComment"]
                     top_comment = top_comment_node["snippet"]
                     comment_id = item["id"]
-                    
+
                     # Add top-level comment
                     comment = CommentResult(
                         platform="youtube",
@@ -228,6 +221,7 @@ class YouTubeCrawler(BaseCrawler):
         except QuotaExhaustedError:
             logger.warning("YouTube API Quota exhausted! Falling back to Playwright for comments.")
             from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
+
             crawler = PlaywrightYouTubeCrawler()
             return await crawler.get_comments(post_id, limit)
 
@@ -235,21 +229,20 @@ class YouTubeCrawler(BaseCrawler):
         """Internal helper to fetch all replies for a comment thread via pagination."""
         replies = []
         page_token = None
-        
+
         # Limit total replies per thread to avoid infinite loops/quota burn
         max_thread_replies = 500
-        
+
         while len(replies) < max_thread_replies:
             try:
                 response = await self.api.get_comment_replies(
-                    parent_id=parent_id,
-                    page_token=page_token
+                    parent_id=parent_id, page_token=page_token
                 )
-                
+
                 items = response.get("items", [])
                 if not items:
                     break
-                    
+
                 for item in items:
                     snippet = item["snippet"]
                     reply = CommentResult(
@@ -266,14 +259,14 @@ class YouTubeCrawler(BaseCrawler):
                         raw=item,
                     )
                     replies.append(reply)
-                    
+
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break
             except Exception as e:
                 logger.warning(f"Failed to fetch replies for {parent_id}: {e}")
                 break
-                
+
         return replies
 
     # ---- Private helpers ----
@@ -303,9 +296,7 @@ class YouTubeCrawler(BaseCrawler):
                     "type": "video",
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                     "duration": content_details.get("duration"),
-                    "thumbnail_url": snippet.get("thumbnails", {})
-                    .get("high", {})
-                    .get("url"),
+                    "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
                     "definition": content_details.get("definition"),
                     "caption": content_details.get("caption") == "true",
                 }
@@ -322,11 +313,13 @@ class YouTubeCrawler(BaseCrawler):
         # Extract chapters if available
         chapters = []
         for chapter in info.get("chapters", []):
-            chapters.append({
-                "start_time": chapter.get("start_time"),
-                "end_time": chapter.get("end_time"),
-                "title": chapter.get("title")
-            })
+            chapters.append(
+                {
+                    "start_time": chapter.get("start_time"),
+                    "end_time": chapter.get("end_time"),
+                    "title": chapter.get("title"),
+                }
+            )
 
         return CrawlResult(
             platform="youtube",
@@ -351,7 +344,8 @@ class YouTubeCrawler(BaseCrawler):
                     "formats_available": len(info.get("formats", [])),
                     "chapters": chapters,
                     "categories": info.get("categories", []),
-                    "subtitles": list(info.get("subtitles", {}).keys()) + list(info.get("automatic_captions", {}).keys())
+                    "subtitles": list(info.get("subtitles", {}).keys())
+                    + list(info.get("automatic_captions", {}).keys()),
                 }
             ],
             tags=info.get("tags", []),

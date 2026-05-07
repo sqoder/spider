@@ -85,9 +85,7 @@ class GalleryDLClient:
                         data = json.loads(line)
                         if isinstance(data, list) and len(data) >= 3:
                             # gallery-dl format: [category, subcategory, metadata_dict]
-                            results.append(
-                                data[2] if isinstance(data[2], dict) else {"raw": data}
-                            )
+                            results.append(data[2] if isinstance(data[2], dict) else {"raw": data})
                         elif isinstance(data, dict):
                             results.append(data)
                     except json.JSONDecodeError:
@@ -156,9 +154,7 @@ class GalleryDLClient:
         except asyncio.TimeoutError:
             raise MediaDownloadError(url, "Download timed out (10 min limit)")
 
-    async def get_user_content(
-        self, username: str, limit: int = 20
-    ) -> list[dict[str, Any]]:
+    async def get_user_content(self, username: str, limit: int = 20) -> list[dict[str, Any]]:
         """
         Get content metadata from a user's profile.
 
@@ -206,9 +202,7 @@ class GalleryDLClient:
                     try:
                         data = json.loads(line)
                         if isinstance(data, list) and len(data) >= 3:
-                            results.append(
-                                data[2] if isinstance(data[2], dict) else {"raw": data}
-                            )
+                            results.append(data[2] if isinstance(data[2], dict) else {"raw": data})
                         elif isinstance(data, dict):
                             results.append(data)
                     except json.JSONDecodeError:

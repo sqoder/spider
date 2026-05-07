@@ -21,6 +21,7 @@ from app.crawlers.youtube.innertube_client import InnertubeClient
 from app.core.config import get_settings
 from app.crawlers.youtube.ytdlp_client import YtdlpClient
 
+
 class PlaywrightYouTubeCrawler(BaseCrawler):
     """
     YouTube crawler using Playwright for direct web scraping.
@@ -42,7 +43,9 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             if button:
                 button.click()
                 await asyncio.sleep(1)
-                logger.info("[Playwright] Handled privacy consent popup via Scrapling adaptive parser.")
+                logger.info(
+                    "[Playwright] Handled privacy consent popup via Scrapling adaptive parser."
+                )
                 return
         except Exception:
             pass
@@ -53,7 +56,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                 "button[aria-label='Accept all']",
                 "button:has-text('Accept all')",
                 "ytd-button-renderer:has-text('Accept all')",
-                "form[action='https://consent.youtube.com/save'] button"
+                "form[action='https://consent.youtube.com/save'] button",
             ]
             page = fetcher.page
             for selector in selectors:
@@ -62,7 +65,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                     btn = page.locator(selector).first
                     if await btn.is_visible(timeout=2000):
                         await btn.click()
-                        await asyncio.sleep(1) 
+                        await asyncio.sleep(1)
                         logger.info("[Playwright] Handled privacy consent popup via selector.")
                         return
                 except Exception:
@@ -82,7 +85,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         page = fetcher.page
 
@@ -116,9 +119,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                         video = item["videoRenderer"]
 
                         video_id = video.get("videoId")
-                        title = (
-                            video.get("title", {}).get("runs", [{}])[0].get("text", "")
-                        )
+                        title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
 
                         # Author info
                         owner = video.get("ownerText", {}).get("runs", [{}])[0]
@@ -129,14 +130,10 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                             .get("webCommandMetadata", {})
                             .get("url", "")
                         )
-                        author_username = (
-                            author_url.split("/")[-1] if author_url else ""
-                        )
+                        author_username = author_url.split("/")[-1] if author_url else ""
 
                         # Stats
-                        view_text = video.get("viewCountText", {}).get(
-                            "simpleText", "0"
-                        )
+                        view_text = video.get("viewCountText", {}).get("simpleText", "0")
                         view_count = self._parse_count(view_text)
 
                         result = CrawlResult(
@@ -208,7 +205,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         page = fetcher.page
 
@@ -216,7 +213,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             await self._goto_with_consent(fetcher, url)
             # Wait a bit for the data to be injected into window
             await asyncio.sleep(1)
-            
+
             yt_data = await page.evaluate("() => { return window.ytInitialData; }")
             if not yt_data:
                 raise Exception("Failed to extract ytInitialData for video detail")
@@ -224,37 +221,49 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             # Extract from the complex nested structure
             results = yt_data.get("contents", {}).get("twoColumnWatchNextResults", {})
             results_primary = results.get("results", {}).get("results", {})
-            
+
             # This path is highly variable on YouTube, using a defensive search
             video_primary_info = {}
             video_secondary_info = {}
-            
+
             for content in results_primary.get("contents", []):
                 if "videoPrimaryInfoRenderer" in content:
                     video_primary_info = content["videoPrimaryInfoRenderer"]
                 if "videoSecondaryInfoRenderer" in content:
                     video_secondary_info = content["videoSecondaryInfoRenderer"]
 
-            video_id = yt_data.get("currentVideoEndpoint", {}).get("watchEndpoint", {}).get("videoId")
+            video_id = (
+                yt_data.get("currentVideoEndpoint", {}).get("watchEndpoint", {}).get("videoId")
+            )
             title = video_primary_info.get("title", {}).get("runs", [{}])[0].get("text", "")
-            
+
             # View count
-            view_text = video_primary_info.get("viewCount", {}).get("videoViewCountRenderer", {}).get("viewCount", {}).get("simpleText", "0")
+            view_text = (
+                video_primary_info.get("viewCount", {})
+                .get("videoViewCountRenderer", {})
+                .get("viewCount", {})
+                .get("simpleText", "0")
+            )
             view_count = self._parse_count(view_text)
 
             # Author / Description
             owner = video_secondary_info.get("owner", {}).get("videoOwnerRenderer", {})
             author_name = owner.get("title", {}).get("runs", [{}])[0].get("text", "")
-            author_url = owner.get("navigationEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
+            author_url = (
+                owner.get("navigationEndpoint", {})
+                .get("commandMetadata", {})
+                .get("webCommandMetadata", {})
+                .get("url", "")
+            )
             author_username = author_url.split("/")[-1] if author_url else ""
-            
+
             # Robust Description Extraction
             description_text = ""
             # Path 1: Standard secondary info
             description_runs = video_secondary_info.get("description", {}).get("runs", [])
             if description_runs:
                 description_text = "".join([r.get("text", "") for r in description_runs])
-            
+
             # Path 2: Fallback to engagementPanels (new YouTube UI)
             if not description_text:
                 panels = yt_data.get("engagementPanels", [])
@@ -274,9 +283,11 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                                     for i in obj:
                                         texts.extend(find_all_text(i))
                                 return texts
+
                             description_text = "\n".join(find_all_text(panel))
                             break
-                        except Exception: continue
+                        except Exception:
+                            continue
 
             return CrawlResult(
                 platform="youtube",
@@ -321,17 +332,21 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                     continue
                 if cid:
                     seen_ids.add(cid)
-                results.append(CommentResult(
-                    platform="youtube",
-                    source_id=cid,
-                    content=c.get("text", ""),
-                    author_name=c.get("author", ""),
-                    author_id=c.get("author_id") or c.get("author_channel_id"),
-                    like_count=c.get("like_count", 0) or 0,
-                    reply_count=c.get("reply_count", 0) or 0,
-                    parent_comment_id=parent_id,
-                    published_at=datetime.fromtimestamp(c.get("timestamp", 0)) if c.get("timestamp") else None,
-                ))
+                results.append(
+                    CommentResult(
+                        platform="youtube",
+                        source_id=cid,
+                        content=c.get("text", ""),
+                        author_name=c.get("author", ""),
+                        author_id=c.get("author_id") or c.get("author_channel_id"),
+                        like_count=c.get("like_count", 0) or 0,
+                        reply_count=c.get("reply_count", 0) or 0,
+                        parent_comment_id=parent_id,
+                        published_at=datetime.fromtimestamp(c.get("timestamp", 0))
+                        if c.get("timestamp")
+                        else None,
+                    )
+                )
             logger.info(f"[yt-dlp] Success: extracted {len(results)} comments")
             return results
         except Exception as e:
@@ -343,10 +358,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             innertube_results = await innertube.get_comments(post_id, limit)
             if innertube_results:
                 # Deduplicate against any results already collected
-                deduped = [
-                    r for r in innertube_results
-                    if r.source_id not in seen_ids
-                ]
+                deduped = [r for r in innertube_results if r.source_id not in seen_ids]
                 logger.info(f"[Innertube] Success: fetched {len(deduped)} unique comments")
                 return deduped
         except Exception as e:
@@ -359,40 +371,43 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         page = fetcher.page
 
         results = []
         try:
             await self._goto_with_consent(fetcher, url)
-            await asyncio.sleep(2) # Wait for page load
-            
+            await asyncio.sleep(2)  # Wait for page load
+
             # 1. Human-like interaction: Click the page to focus
             await page.mouse.click(100, 100)
-            
+
             # 2. Scroll to the comment section
             # Different YouTube versions have comments at different positions
             await page.evaluate("window.scrollTo(0, 1000)")
             await asyncio.sleep(2)
-            
+
             # Use multiple selector strategies
             comment_selectors = [
                 "ytd-comment-thread-renderer",
                 "#comments",
-                "ytd-item-section-renderer[section-identifier='comment-item-section']"
+                "ytd-item-section-renderer[section-identifier='comment-item-section']",
             ]
-            
+
             found = False
             for selector in comment_selectors:
                 try:
                     await page.wait_for_selector(selector, timeout=15000)
                     found = True
                     break
-                except: continue
-            
+                except:
+                    continue
+
             if not found:
-                logger.warning(f"[Playwright] Could not find comment section via selectors. Forcing scroll.")
+                logger.warning(
+                    f"[Playwright] Could not find comment section via selectors. Forcing scroll."
+                )
                 for _ in range(3):
                     await page.keyboard.press("PageDown")
                     await asyncio.sleep(2)
@@ -403,34 +418,44 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                 await page.keyboard.press("End")
                 await asyncio.sleep(2)
                 current_elements = await page.query_selector_all("ytd-comment-thread-renderer")
-                if len(current_elements) >= limit or (len(current_elements) == last_len and last_len > 0):
+                if len(current_elements) >= limit or (
+                    len(current_elements) == last_len and last_len > 0
+                ):
                     break
                 last_len = len(current_elements)
 
             # 4. Extract with fallback selectors
             elements = await page.query_selector_all("ytd-comment-thread-renderer")
             logger.info(f"[Playwright] Found {len(elements)} comments")
-            
+
             for el in elements:
                 try:
                     # Try different paths for content
-                    content_el = await el.query_selector("#content-text") or await el.query_selector("yt-formatted-string")
-                    author_el = await el.query_selector("#author-text") or await el.query_selector("#author-name")
-                    
+                    content_el = await el.query_selector(
+                        "#content-text"
+                    ) or await el.query_selector("yt-formatted-string")
+                    author_el = await el.query_selector("#author-text") or await el.query_selector(
+                        "#author-name"
+                    )
+
                     if content_el and author_el:
                         content = await content_el.inner_text()
                         author_name = (await author_el.inner_text()).strip()
-                        
-                        results.append(CommentResult(
-                            platform="youtube",
-                            source_id=f"pw_{len(results)}",
-                            content=content,
-                            author_name=author_name,
-                            published_at=datetime.now(),
-                        ))
-                except: continue
-                
-                if len(results) >= limit: break
+
+                        results.append(
+                            CommentResult(
+                                platform="youtube",
+                                source_id=f"pw_{len(results)}",
+                                content=content,
+                                author_name=author_name,
+                                published_at=datetime.now(),
+                            )
+                        )
+                except:
+                    continue
+
+                if len(results) >= limit:
+                    break
 
         except Exception as e:
             logger.error(f"[Playwright] Final fallback comment extraction failed: {e}")

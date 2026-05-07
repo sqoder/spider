@@ -36,6 +36,7 @@ from app.crawlers.reddit.api_client import RedditAPIClient
 #   Helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _ts(unix: Any) -> Optional[datetime]:
     """Convert a Unix timestamp to a UTC-aware datetime."""
     try:
@@ -48,13 +49,15 @@ def _award_list(data: dict) -> list[dict]:
     """Extract a compact award list from a post / comment dict."""
     awards = []
     for a in data.get("all_awardings") or []:
-        awards.append({
-            "name": a.get("name"),
-            "count": a.get("count", 1),
-            "icon_url": a.get("icon_url"),
-            "coin_price": a.get("coin_price"),
-            "description": a.get("description"),
-        })
+        awards.append(
+            {
+                "name": a.get("name"),
+                "count": a.get("count", 1),
+                "icon_url": a.get("icon_url"),
+                "coin_price": a.get("coin_price"),
+                "description": a.get("description"),
+            }
+        )
     return awards
 
 
@@ -69,17 +72,19 @@ def _media_from_post(data: dict) -> list[dict]:
     # ── Reddit native video ────────────────────────────────
     reddit_video = (data.get("media") or {}).get("reddit_video")
     if reddit_video:
-        media_list.append({
-            "type": "video",
-            "source": "reddit_video",
-            "url": reddit_video.get("fallback_url"),
-            "hls_url": reddit_video.get("hls_url"),
-            "dash_url": reddit_video.get("dash_url"),
-            "width": reddit_video.get("width"),
-            "height": reddit_video.get("height"),
-            "duration": reddit_video.get("duration"),
-            "is_gif": reddit_video.get("is_gif", False),
-        })
+        media_list.append(
+            {
+                "type": "video",
+                "source": "reddit_video",
+                "url": reddit_video.get("fallback_url"),
+                "hls_url": reddit_video.get("hls_url"),
+                "dash_url": reddit_video.get("dash_url"),
+                "width": reddit_video.get("width"),
+                "height": reddit_video.get("height"),
+                "duration": reddit_video.get("duration"),
+                "is_gif": reddit_video.get("is_gif", False),
+            }
+        )
 
     # ── Gallery ────────────────────────────────────────────
     if data.get("is_gallery") and data.get("gallery_data"):
@@ -161,8 +166,10 @@ def _media_from_post(data: dict) -> list[dict]:
 
     # ── Thumbnail (always include if present) ──────────────
     thumb = data.get("thumbnail", "")
-    if thumb and thumb.startswith("http") and not any(
-        m.get("source") == "direct" for m in media_list
+    if (
+        thumb
+        and thumb.startswith("http")
+        and not any(m.get("source") == "direct" for m in media_list)
     ):
         media_list.append({"type": "thumbnail", "source": "thumbnail", "url": thumb})
 
@@ -173,9 +180,7 @@ def _flair(data: dict, prefix: str) -> Optional[str]:
     """Build a readable flair string from richtext or plain text fields."""
     # richtext flair
     richtext = data.get(f"{prefix}_flair_richtext") or []
-    text_parts = [
-        r.get("t", "") for r in richtext if r.get("e") == "text" and r.get("t")
-    ]
+    text_parts = [r.get("t", "") for r in richtext if r.get("e") == "text" and r.get("t")]
     if text_parts:
         return " ".join(text_parts).strip() or None
     # plain text
@@ -186,13 +191,15 @@ def _crosspost_chain(data: dict) -> list[dict]:
     """Extract the crosspost parent chain (if any)."""
     chain = []
     for cp in data.get("crosspost_parent_list") or []:
-        chain.append({
-            "post_id": cp.get("id"),
-            "subreddit": cp.get("subreddit"),
-            "title": cp.get("title"),
-            "url": f"https://www.reddit.com{cp.get('permalink', '')}",
-            "score": cp.get("score", 0),
-        })
+        chain.append(
+            {
+                "post_id": cp.get("id"),
+                "subreddit": cp.get("subreddit"),
+                "title": cp.get("title"),
+                "url": f"https://www.reddit.com{cp.get('permalink', '')}",
+                "score": cp.get("score", 0),
+            }
+        )
     return chain
 
 
@@ -211,6 +218,7 @@ def _extract_post_ids(url: str) -> tuple[str, str]:
 # ══════════════════════════════════════════════════════════════════════════════
 #   Main crawler
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class RedditCrawler(BaseCrawler):
     """
@@ -273,9 +281,7 @@ class RedditCrawler(BaseCrawler):
 
         while remaining > 0:
             batch = min(remaining, 100)
-            response = await self.api.get_user_posts(
-                username, limit=batch, after=after
-            )
+            response = await self.api.get_user_posts(username, limit=batch, after=after)
             data = response.get("data", {})
             children = data.get("children", [])
             if not children:
@@ -308,9 +314,7 @@ class RedditCrawler(BaseCrawler):
 
         raise ValueError(f"Could not parse post from: {url}")
 
-    async def get_comments(
-        self, post_id: str, limit: int = 500
-    ) -> list[CommentResult]:
+    async def get_comments(self, post_id: str, limit: int = 500) -> list[CommentResult]:
         """
         Get the full comment tree for a post.
 
@@ -327,9 +331,7 @@ class RedditCrawler(BaseCrawler):
         else:
             subreddit, pid = "all", post_id
 
-        response = await self.api.get_comments(
-            subreddit, pid, sort="best", limit=min(limit, 500)
-        )
+        response = await self.api.get_comments(subreddit, pid, sort="best", limit=min(limit, 500))
 
         results: list[CommentResult] = []
         if not isinstance(response, list) or len(response) < 2:
@@ -381,12 +383,13 @@ class RedditCrawler(BaseCrawler):
                 # Recurse into replies
                 replies_data = data.get("replies")
                 if isinstance(replies_data, dict):
-                    reply_children = (
-                        replies_data.get("data", {}).get("children", [])
-                    )
+                    reply_children = replies_data.get("data", {}).get("children", [])
                     await self._expand_comments(
-                        reply_children, results, post_fullname,
-                        parent_id=comment.source_id, limit=limit,
+                        reply_children,
+                        results,
+                        post_fullname,
+                        parent_id=comment.source_id,
+                        limit=limit,
                     )
 
             elif kind == "more":
@@ -400,17 +403,14 @@ class RedditCrawler(BaseCrawler):
                 break
             batch = more_ids[i : i + 100]
             try:
-                more_resp = await self.api.get_more_children(
-                    post_fullname, batch, sort="best"
-                )
-                more_things = (
-                    more_resp.get("json", {})
-                    .get("data", {})
-                    .get("things", [])
-                )
+                more_resp = await self.api.get_more_children(post_fullname, batch, sort="best")
+                more_things = more_resp.get("json", {}).get("data", {}).get("things", [])
                 await self._expand_comments(
-                    more_things, results, post_fullname,
-                    parent_id=parent_id, limit=limit,
+                    more_things,
+                    results,
+                    post_fullname,
+                    parent_id=parent_id,
+                    limit=limit,
                 )
             except Exception as e:
                 logger.warning(f"[Reddit] morechildren expansion failed: {e}")
@@ -500,7 +500,7 @@ class RedditCrawler(BaseCrawler):
             "locked": bool(data.get("locked")),
             "archived": bool(data.get("archived")),
             "quarantine": bool(data.get("quarantine")),
-            "edited": data.get("edited"),     # False or timestamp
+            "edited": data.get("edited"),  # False or timestamp
             "distinguished": data.get("distinguished"),  # None | "moderator" | "admin"
             "is_crosspostable": bool(data.get("is_crosspostable")),
             "crosspost_chain": _crosspost_chain(data),
@@ -535,9 +535,7 @@ class RedditCrawler(BaseCrawler):
             view_count=0,
             media=media,
             thumbnail_url=(
-                data.get("thumbnail")
-                if str(data.get("thumbnail", "")).startswith("http")
-                else None
+                data.get("thumbnail") if str(data.get("thumbnail", "")).startswith("http") else None
             ),
             tags=[],
             published_at=_ts(data.get("created_utc")),
@@ -546,9 +544,7 @@ class RedditCrawler(BaseCrawler):
             raw_sources={"reddit_api": data},
         )
 
-    def _parse_comment(
-        self, data: dict, parent_comment_id: Optional[str]
-    ) -> CommentResult:
+    def _parse_comment(self, data: dict, parent_comment_id: Optional[str]) -> CommentResult:
         """Parse a Reddit comment dict into a fully-populated CommentResult."""
 
         comment_id = data.get("id", "")
@@ -565,7 +561,7 @@ class RedditCrawler(BaseCrawler):
             "comment_id": comment_id,
             "post_id": data.get("link_id", ""),
             "subreddit": data.get("subreddit", ""),
-            "parent_id": data.get("parent_id", ""),     # t1_xxx or t3_xxx
+            "parent_id": data.get("parent_id", ""),  # t1_xxx or t3_xxx
             "parent_comment_id": parent_comment_id,
             "depth": data.get("depth", 0),
             # content
@@ -606,7 +602,7 @@ class RedditCrawler(BaseCrawler):
             author_username=author,
             author_id=data.get("author_fullname"),
             like_count=data.get("score", 0),
-            reply_count=0,   # Reddit API doesn't expose reply count directly
+            reply_count=0,  # Reddit API doesn't expose reply count directly
             parent_comment_id=parent_comment_id,
             published_at=_ts(data.get("created_utc")),
             raw=data,
@@ -634,9 +630,7 @@ class RedditCrawler(BaseCrawler):
             trophies: list[str] = []
             try:
                 trophy_resp = await self.api.get_user_trophies(username)
-                trophy_list = (
-                    trophy_resp.get("data", {}).get("trophies", [])
-                )
+                trophy_list = trophy_resp.get("data", {}).get("trophies", [])
                 trophies = [
                     t.get("data", {}).get("name", "")
                     for t in trophy_list
@@ -660,9 +654,7 @@ class RedditCrawler(BaseCrawler):
                 "has_verified_email": bool(udata.get("has_verified_email")),
                 "is_employee": bool(udata.get("is_employee")),
                 "hide_from_robots": bool(udata.get("hide_from_robots")),
-                "description": (udata.get("subreddit") or {}).get(
-                    "public_description", ""
-                ),
+                "description": (udata.get("subreddit") or {}).get("public_description", ""),
                 "accept_followers": bool(udata.get("accept_followers")),
                 "trophies": trophies,
             }
@@ -688,12 +680,14 @@ class RedditCrawler(BaseCrawler):
             try:
                 rules_resp = await self.api.get_subreddit_rules(subreddit)
                 for rule in rules_resp.get("rules", []):
-                    rules.append({
-                        "short_name": rule.get("short_name"),
-                        "description": rule.get("description"),
-                        "kind": rule.get("kind"),
-                        "priority": rule.get("priority"),
-                    })
+                    rules.append(
+                        {
+                            "short_name": rule.get("short_name"),
+                            "description": rule.get("description"),
+                            "kind": rule.get("kind"),
+                            "priority": rule.get("priority"),
+                        }
+                    )
             except Exception:
                 pass  # Non-critical
 

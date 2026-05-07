@@ -48,22 +48,24 @@ class CrawlerFactory:
         # Special handling for YouTube smart fallback
         if platform == "youtube":
             from app.core.config import get_settings
+
             settings = get_settings()
 
             if settings.youtube_use_scraper:
                 logger.info("Using YouTube visible-first scraper mode.")
                 from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+
                 return VisibleYouTubeCrawler()
 
             if not settings.youtube_api_key:
                 logger.info("Using yt-dlp YouTube crawler (no API key).")
                 from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+
                 return YtdlpYouTubeCrawler()
 
         crawler_class = cls._registry[platform]
         logger.info(f"Creating crawler for platform: {platform}")
         return crawler_class()
-
 
     @classmethod
     def get_supported_platforms(cls) -> list[str]:
@@ -79,28 +81,31 @@ class CrawlerFactory:
 def register_all_crawlers() -> None:
     """Register all available platform crawlers based on enabled_platforms config."""
     from app.core.config import get_settings
+
     settings = get_settings()
     enabled = {
-        item.strip().lower()
-        for item in settings.enabled_platforms.split(",")
-        if item.strip()
+        item.strip().lower() for item in settings.enabled_platforms.split(",") if item.strip()
     }
 
     if "youtube" in enabled:
         try:
             from app.core.config import get_settings
+
             settings = get_settings()
 
             if settings.youtube_use_scraper:
                 from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+
                 CrawlerFactory.register("youtube", VisibleYouTubeCrawler)
                 logger.info("Using YouTube visible-first scraper.")
             elif not settings.youtube_api_key:
                 from app.crawlers.youtube.ytdlp_crawler import YtdlpYouTubeCrawler
+
                 CrawlerFactory.register("youtube", YtdlpYouTubeCrawler)
                 logger.info("YouTube API Key not found. Using yt-dlp crawler.")
             else:
                 from app.crawlers.youtube.crawler import YouTubeCrawler
+
                 CrawlerFactory.register("youtube", YouTubeCrawler)
                 logger.info("Using YouTube API crawler.")
         except ImportError as e:
@@ -109,6 +114,7 @@ def register_all_crawlers() -> None:
     if "reddit" in enabled:
         try:
             from app.crawlers.reddit.crawler import RedditCrawler
+
             CrawlerFactory.register("reddit", RedditCrawler)
         except ImportError as e:
             logger.warning(f"Reddit crawler unavailable: {e}")
@@ -116,6 +122,7 @@ def register_all_crawlers() -> None:
     if "tiktok" in enabled:
         try:
             from app.crawlers.tiktok.crawler import TikTokCrawler
+
             CrawlerFactory.register("tiktok", TikTokCrawler)
         except ImportError as e:
             logger.warning(f"TikTok crawler unavailable: {e}")
@@ -123,6 +130,7 @@ def register_all_crawlers() -> None:
     if "instagram" in enabled:
         try:
             from app.crawlers.instagram.crawler import InstagramCrawler
+
             CrawlerFactory.register("instagram", InstagramCrawler)
         except ImportError as e:
             logger.warning(f"Instagram crawler unavailable: {e}")
@@ -130,6 +138,7 @@ def register_all_crawlers() -> None:
     if "x" in enabled or "twitter" in enabled:
         try:
             from app.crawlers.x.crawler import XCrawler
+
             CrawlerFactory.register("x", XCrawler)
         except ImportError as e:
             logger.warning(f"X/Twitter crawler unavailable: {e}")

@@ -41,10 +41,7 @@ class DbStoreImplement(BaseStore):
                 author_id = None
                 author_data_raw = item.get("author")
                 if isinstance(author_data_raw, dict):
-                    author_source_id = (
-                        author_data_raw.get("id")
-                        or author_data_raw.get("source_id")
-                    )
+                    author_source_id = author_data_raw.get("id") or author_data_raw.get("source_id")
                     if not author_source_id:
                         author_data_raw = None
                 if isinstance(author_data_raw, dict):
@@ -83,7 +80,7 @@ class DbStoreImplement(BaseStore):
                 await post_repo.create_or_update(post_schema)
             except Exception as e:
                 logger.error(f"Failed to store content in DB: {e}")
-        
+
         await session.commit()
 
     async def store_comment(self, post_id: str, items: List[dict]):
@@ -118,7 +115,7 @@ class DbStoreImplement(BaseStore):
                 await comment_repo.create_or_update(comment_schema)
             except Exception as e:
                 logger.error(f"Failed to store comment in DB: {e}")
-        
+
         await session.commit()
 
     async def store_creator(self, items: List[dict]):
@@ -143,7 +140,7 @@ class DbStoreImplement(BaseStore):
                 await author_repo.create_or_update(author_schema)
             except Exception as e:
                 logger.error(f"Failed to store creator in DB: {e}")
-        
+
         await session.commit()
 
     async def close(self):

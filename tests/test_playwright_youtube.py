@@ -2,9 +2,11 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from app.crawlers.youtube.playwright_crawler import PlaywrightYouTubeCrawler
 
+
 class FakeFetcher:
     def __init__(self, page):
         self.page = page
+
 
 @pytest.mark.asyncio
 async def test_search_uses_browser_manager():
@@ -16,13 +18,20 @@ async def test_search_uses_browser_manager():
         mock_bm.close_fetcher = AsyncMock()
 
         # We need to mock ytInitialData evaluation
-        mock_page.evaluate.return_value = {"contents": {"twoColumnSearchResultsRenderer": {"primaryContents": {"sectionListRenderer": {"contents": []}}}}}
+        mock_page.evaluate.return_value = {
+            "contents": {
+                "twoColumnSearchResultsRenderer": {
+                    "primaryContents": {"sectionListRenderer": {"contents": []}}
+                }
+            }
+        }
 
         await crawler.search("test")
 
         mock_bm.new_fetcher.assert_called_once()
         mock_page.goto.assert_called()
         mock_bm.close_fetcher.assert_called_once_with(mock_fetcher)
+
 
 @pytest.mark.asyncio
 async def test_get_post_detail_uses_browser_manager():
@@ -36,7 +45,7 @@ async def test_get_post_detail_uses_browser_manager():
         # Mock ytInitialData for video detail
         mock_page.evaluate.return_value = {
             "contents": {"twoColumnWatchNextResults": {"results": {"results": {"contents": []}}}},
-            "currentVideoEndpoint": {"watchEndpoint": {"videoId": "vid123"}}
+            "currentVideoEndpoint": {"watchEndpoint": {"videoId": "vid123"}},
         }
 
         await crawler.get_post_detail("https://www.youtube.com/watch?v=vid123")

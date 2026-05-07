@@ -49,7 +49,9 @@ async def test_db_store_persists_visible_contract_fields():
         ).scalar_one()
         comment = (
             await session.execute(
-                select(Comment).where(Comment.platform == "youtube", Comment.source_id == "comment1")
+                select(Comment).where(
+                    Comment.platform == "youtube", Comment.source_id == "comment1"
+                )
             )
         ).scalar_one()
 
