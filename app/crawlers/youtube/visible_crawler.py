@@ -17,6 +17,7 @@ from urllib.parse import quote_plus, urljoin, urlparse, parse_qs
 
 from loguru import logger
 from playwright.async_api import Page
+from scrapling import StealthyFetcher
 
 from app.core.browser_manager import browser_manager
 from app.core.config import get_settings
@@ -46,12 +47,13 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         logger.info(f"[YouTube visible] Searching: {keyword}")
         await self._rate_limit()
-        page = await self._new_page()
+        fetcher = await self._new_fetcher()
+        page = fetcher.page
         results: list[CrawlResult] = []
         page_url = f"{YOUTUBE_ORIGIN}/results?search_query={quote_plus(keyword)}"
 
         try:
-            await self._goto_with_consent(page, page_url)
+            await self._goto_with_consent(fetcher, page_url)
             await self._scroll_for_items(page, limit)
             yt_data = await self._yt_initial_data(page)
             if not yt_data:
@@ -82,7 +84,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             logger.exception(f"[YouTube visible] Search failed: {exc}")
             return results[:limit]
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         await self._rate_limit()
@@ -104,12 +106,13 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def get_post_detail(self, url: str) -> CrawlResult:
         logger.info(f"[YouTube visible] Extracting detail: {url}")
         await self._rate_limit()
-        page = await self._new_page()
+        fetcher = await self._new_fetcher()
+        page = fetcher.page
         ytdlp_info: dict[str, Any] | None = None
 
         try:
-            await self._goto_with_consent(page, url)
-            await self._expand_description(page)
+            await self._goto_with_consent(fetcher, url)
+            await self._expand_description(fetcher)
             yt_data = await self._yt_initial_data(page)
             dom_snapshot = await self._dom_snapshot(page)
 
@@ -143,7 +146,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
                 },
             )
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         logger.info(f"[YouTube visible] Fetching comments for: {post_id}")
@@ -440,23 +443,33 @@ class VisibleYouTubeCrawler(BaseCrawler):
             capture_meta=cls._capture_meta("youtube_visible_detail", canonical_url),
         )
 
-    async def _new_page(self) -> Page:
-        return await browser_manager.new_page(
+    async def _new_fetcher(self) -> StealthyFetcher:
+        return await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
             user_agent=YOUTUBE_USER_AGENT,
         )
 
-    async def _goto_with_consent(self, page: Page, url: str) -> None:
-        await page.goto(url, wait_until="domcontentloaded")
-        await self._handle_consent(page)
+    async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str) -> None:
+        await fetcher.page.goto(url, wait_until="domcontentloaded")
+        await self._handle_consent(fetcher)
         try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
+            await fetcher.page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             # networkidle timeout is non-fatal — continue with whatever loaded
             pass
 
-    async def _handle_consent(self, page: Page) -> None:
+    async def _handle_consent(self, fetcher: StealthyFetcher) -> None:
+        # Scrapling adaptive find for consent button
+        try:
+            button = fetcher.find_similar("Accept all", "button")
+            if button:
+                button.click()
+                await fetcher.page.wait_for_load_state("domcontentloaded")
+                return
+        except Exception:
+            pass
+
         selectors = [
             "button[aria-label='Accept all']",
             "button:has-text('Accept all')",
@@ -464,6 +477,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "ytd-button-renderer:has-text('Accept all')",
             "form[action*='consent.youtube.com/save'] button",
         ]
+        page = fetcher.page
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -491,7 +505,17 @@ class VisibleYouTubeCrawler(BaseCrawler):
             await page.mouse.wheel(0, 2400)
             await asyncio.sleep(1)
 
-    async def _expand_description(self, page: Page) -> None:
+    async def _expand_description(self, fetcher: StealthyFetcher) -> None:
+        # Scrapling adaptive find for "more" button
+        try:
+            button = fetcher.find_similar("more", "button")
+            if button:
+                button.click()
+                await asyncio.sleep(0.5)
+                return
+        except Exception:
+            pass
+
         selectors = [
             "#description tp-yt-paper-button#expand",
             "tp-yt-paper-button#expand",
@@ -499,6 +523,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "button:has-text('more')",
             "button:has-text('Show more')",
         ]
+        page = fetcher.page
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -533,13 +558,14 @@ class VisibleYouTubeCrawler(BaseCrawler):
         self, video_id: str, limit: int
     ) -> list[CommentResult]:
         url = f"{YOUTUBE_ORIGIN}/watch?v={video_id}"
-        page = await self._new_page()
+        fetcher = await self._new_fetcher()
+        page = fetcher.page
         results: list[CommentResult] = []
         seen: set[str] = set()
         stale_rounds = 0
 
         try:
-            await self._goto_with_consent(page, url)
+            await self._goto_with_consent(fetcher, url)
             await page.mouse.wheel(0, 1800)
             await asyncio.sleep(1.5)
 
@@ -597,7 +623,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         except Exception as exc:
             logger.warning(f"[YouTube visible] DOM comments failed: {exc}")
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
         return results[:limit]
 

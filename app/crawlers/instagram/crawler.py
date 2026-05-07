@@ -3,57 +3,65 @@ Instagram crawler implementation (Phase 2).
 Uses native web endpoints for public profiles and single posts to bypass login.
 """
 
+import asyncio
 from datetime import datetime, timezone
 import json
 import re
 from typing import Optional
 
+from scrapling import Fetcher
 from loguru import logger
-import httpx
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 
 
 class InstagramCrawler(BaseCrawler):
-    """Instagram platform crawler (Phase 2 - Login-free)."""
+    """Instagram platform crawler using Scrapling Fetcher."""
 
     platform = "instagram"
 
     def __init__(self):
         super().__init__()
-        logger.info("Instagram crawler initialized (Login-free mode)")
+        self._fetcher = Fetcher(
+            timeout=30000,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            }
+        )
+        logger.info("Instagram crawler initialized with Scrapling Fetcher")
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """
         Search Instagram by hashtag.
         Note: Instagram search is heavily protected and requires login. 
-        Please use 'user' mode in config.py for login-free profile crawling.
         """
         await self._rate_limit()
         logger.warning("Instagram hashtag search is restricted and requires login. Skipping.")
         return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get posts from an Instagram user's public profile using the login-free Web Profile API via curl."""
+        """Get posts from an Instagram user's public profile using Scrapling Fetcher."""
         await self._rate_limit()
         username = username.lstrip('@')
         logger.info(f"Instagram user posts: '{username}', limit={limit}")
 
         url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+        headers = {
+            "X-IG-App-ID": "936619743392459",
+            "Referer": f"https://www.instagram.com/{username}/",
+        }
 
         try:
-            import asyncio
-            proc = await asyncio.create_subprocess_exec(
-                "curl", "-s",
-                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-H", "X-IG-App-ID: 936619743392459",
-                url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
+            def _do_fetch():
+                return self._fetcher.get(url, headers=headers)
 
-            data = json.loads(stdout.decode("utf-8", errors="ignore"))
+            response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+            
+            if response.status != 200:
+                logger.warning(f"Instagram API failed with status {response.status}")
+                return []
+
+            data = response.json()
             user_data = data.get("data", {}).get("user", {})
             if not user_data:
                 logger.warning(f"No user data found for {username}")
@@ -83,7 +91,7 @@ class InstagramCrawler(BaseCrawler):
             return []
 
     async def get_post_detail(self, url: str) -> CrawlResult:
-        """Get detailed info for a single Instagram post using the captioned embed page unescape trick via curl."""
+        """Get detailed info for a single Instagram post using Scrapling Fetcher."""
         await self._rate_limit()
         logger.info(f"Instagram post detail: {url}")
 
@@ -96,15 +104,11 @@ class InstagramCrawler(BaseCrawler):
         embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
 
         try:
-            import asyncio
-            proc = await asyncio.create_subprocess_exec(
-                "curl", "-s",
-                embed_url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
-            html_data = stdout.decode("utf-8", errors="ignore")
+            def _do_fetch():
+                return self._fetcher.get(embed_url)
+
+            response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+            html_data = response.html_content
 
             idx = html_data.find("gql_data")
             if idx == -1:

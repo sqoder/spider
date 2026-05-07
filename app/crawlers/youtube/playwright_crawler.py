@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 
 from loguru import logger
 from playwright.async_api import Page
+from scrapling import StealthyFetcher
 
 from app.core.browser_manager import browser_manager
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
@@ -33,8 +34,19 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         self.settings = get_settings()
         self.ytdlp = YtdlpClient()
 
-    async def _handle_consent(self, page: Page):
+    async def _handle_consent(self, fetcher: StealthyFetcher):
         """Automatically click 'Accept All' on EU privacy popups."""
+        try:
+            # Scrapling adaptive find for consent button
+            button = fetcher.find_similar("Accept all", "button")
+            if button:
+                button.click()
+                await asyncio.sleep(1)
+                logger.info("[Playwright] Handled privacy consent popup via Scrapling adaptive parser.")
+                return
+        except Exception:
+            pass
+
         try:
             # Common selectors for YouTube's consent dialog
             selectors = [
@@ -43,6 +55,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                 "ytd-button-renderer:has-text('Accept all')",
                 "form[action='https://consent.youtube.com/save'] button"
             ]
+            page = fetcher.page
             for selector in selectors:
                 try:
                     # Wait briefly for the element
@@ -50,32 +63,33 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
                     if await btn.is_visible(timeout=2000):
                         await btn.click()
                         await asyncio.sleep(1) 
-                        logger.info("[Playwright] Handled privacy consent popup.")
+                        logger.info("[Playwright] Handled privacy consent popup via selector.")
                         return
                 except Exception:
                     continue
         except Exception as e:
             logger.debug(f"[Playwright] No consent popup found or handled: {e}")
 
-    async def _goto_with_consent(self, page: Page, url: str):
+    async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str):
         """Navigate to URL and handle consent popup."""
-        await page.goto(url, wait_until="domcontentloaded")
-        await self._handle_consent(page)
+        await fetcher.page.goto(url, wait_until="domcontentloaded")
+        await self._handle_consent(fetcher)
 
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """Search YouTube using Playwright by parsing ytInitialData."""
         await self._rate_limit()
         logger.info(f"[Playwright] Searching YouTube: {keyword}")
-        page = await browser_manager.new_page(
+        fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        page = fetcher.page
 
         results = []
         try:
             url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}"
-            await self._goto_with_consent(page, url)
+            await self._goto_with_consent(fetcher, url)
 
             # YouTube stores the initial data in a global window variable `ytInitialData`
             # We can evaluate javascript to extract it directly!
@@ -145,7 +159,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         except Exception as e:
             logger.error(f"[Playwright] Search failed: {e}")
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
         return results
 
@@ -191,14 +205,15 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         """Extract video details using Playwright by parsing ytInitialData."""
         await self._rate_limit()
         logger.info(f"[Playwright] Extracting video detail: {url}")
-        page = await browser_manager.new_page(
+        fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        page = fetcher.page
 
         try:
-            await self._goto_with_consent(page, url)
+            await self._goto_with_consent(fetcher, url)
             # Wait a bit for the data to be injected into window
             await asyncio.sleep(1)
             
@@ -280,7 +295,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             logger.error(f"[Playwright] Detail extraction failed: {e}")
             return CrawlResult(platform=self.platform, source_id="error", url=url)
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         """Extract comments with multi-tier fallbacks: Innertube -> yt-dlp -> Playwright."""
@@ -341,15 +356,16 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
 
         # Tier 3: Playwright Scrolling (Visual Fallback)
         logger.info(f"[Playwright] Falling back to visual scrolling for {post_id}")
-        page = await browser_manager.new_page(
+        fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        page = fetcher.page
 
         results = []
         try:
-            await self._goto_with_consent(page, url)
+            await self._goto_with_consent(fetcher, url)
             await asyncio.sleep(2) # Wait for page load
             
             # 1. Human-like interaction: Click the page to focus
@@ -419,7 +435,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         except Exception as e:
             logger.error(f"[Playwright] Final fallback comment extraction failed: {e}")
         finally:
-            await browser_manager.close_context(page)
+            await browser_manager.close_context(fetcher)
 
         return results
 

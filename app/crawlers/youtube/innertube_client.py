@@ -1,4 +1,4 @@
-import httpx
+import asyncio
 import re
 import json
 import os
@@ -6,6 +6,7 @@ import time
 from loguru import logger
 from typing import Dict, List, Optional, Tuple
 
+from scrapling import Fetcher
 from app.crawlers.base import CommentResult
 
 from app.core.proxy_manager import proxy_manager
@@ -21,32 +22,27 @@ class InnertubeClient:
         self.settings = get_settings()
 
         # Use project proxy if enabled
-        proxy = None
+        self.proxy = None
         if proxy_manager.enabled:
-            proxy = proxy_manager.get_proxy()
-            logger.info(f"Innertube using proxy: {proxy}")
+            self.proxy = proxy_manager.get_proxy()
+            logger.info(f"Innertube using proxy: {self.proxy}")
 
         # Load cookies with caching (shared across instances)
-        cookies = None
+        self.cookies = None
         if self.settings.youtube_cookies_file and os.path.exists(self.settings.youtube_cookies_file):
-            cookies = self._parse_cookies_for_httpx(self.settings.youtube_cookies_file)
+            self.cookies = self._parse_cookies_for_scrapling(self.settings.youtube_cookies_file)
 
-        self.client = httpx.AsyncClient(
-            proxy=proxy,
-            cookies=cookies,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=30.0,
-            follow_redirects=True,
-            trust_env=False
+        # Initialize Scrapling Fetcher
+        self.fetcher = Fetcher(
+            proxy=self.proxy,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            timeout=30000
         )
         self.api_key = None
         self.context = None
 
-    def _parse_cookies_for_httpx(self, filepath: str) -> dict:
-        """Parse Netscape format cookies for httpx. Results are cached by mtime."""
+    def _parse_cookies_for_scrapling(self, filepath: str) -> dict:
+        """Parse Netscape format cookies for Scrapling. Results are cached by mtime."""
         try:
             current_mtime = os.path.getmtime(filepath)
         except OSError:
@@ -66,7 +62,7 @@ class InnertubeClient:
                         cookies[parts[5].strip()] = parts[6].strip()
             _innertube_cookie_cache[filepath] = (current_mtime, cookies)
         except Exception as e:
-            logger.error(f"Failed to parse cookies for httpx: {e}")
+            logger.error(f"Failed to parse cookies for Scrapling: {e}")
         return cookies
 
     def _extract_json(self, html: str, start_pattern: str) -> dict:
@@ -104,7 +100,11 @@ class InnertubeClient:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _get_initial_data(self, video_id: str):
         url = f"https://www.youtube.com/watch?v={video_id}"
-        response = await self.client.get(url)
+        
+        def _do_fetch():
+            return self.fetcher.get(url, cookies=self.cookies)
+
+        response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
         html = response.text
         
         # Extract API Key - Broaden regex
@@ -226,7 +226,7 @@ class InnertubeClient:
             "context": self.context,
             "continuation": token
         }
-        
+
         # Add mandatory headers for Innertube
         headers = {
             "Content-Type": "application/json",
@@ -235,19 +235,21 @@ class InnertubeClient:
             "Origin": "https://www.youtube.com",
             "Referer": "https://www.youtube.com/"
         }
-        
-        response = await self.client.post(url, json=payload, headers=headers)
-        
+
+        def _do_fetch():
+            return self.fetcher.post(url, json=payload, headers=headers, cookies=self.cookies)
+
+        response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+
         if response.status_code != 200:
             logger.error(f"Innertube API failed with status {response.status_code}: {response.text[:200]}")
             return {}
-            
+
         try:
             return response.json()
         except Exception as e:
             logger.error(f"Failed to parse Innertube JSON. Status: {response.status_code}, Body: {response.text[:200]}")
             return {}
-
     @staticmethod
     def _build_entity_lookup(data: dict) -> dict:
         """Build key -> entity mapping from frameworkUpdates mutations."""
@@ -680,7 +682,5 @@ class InnertubeClient:
         return int(value * multiplier)
 
     async def close(self):
-        try:
-            await self.client.aclose()
-        except Exception as exc:
-            logger.debug(f"[Innertube] Error closing httpx client (ignored): {exc}")
+        # Scrapling Fetcher doesn't need explicit aclose usually
+        pass

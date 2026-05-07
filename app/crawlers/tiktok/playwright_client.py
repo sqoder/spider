@@ -1,6 +1,6 @@
 """
-Playwright-based TikTok Client.
-Intercepts XHR/Fetch API responses by automating a headless browser.
+Scrapling-based TikTok Client.
+Intercepts XHR/Fetch API responses by automating a headless browser with StealthyFetcher.
 """
 
 import asyncio
@@ -10,144 +10,128 @@ from typing import Any, Callable, Dict, List, Optional
 import urllib.parse
 
 from loguru import logger
-from playwright.async_api import BrowserContext, Page, async_playwright
+from scrapling import StealthyFetcher
 
 from app.core.config import get_settings
+from app.core.browser_manager import browser_manager
 
 class PlaywrightTikTokClient:
     def __init__(self):
-        self.playwright = None
-        self.browser = None
-        self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
-        
+        self.fetcher: Optional[StealthyFetcher] = None
         # We will collect intercepted API responses here temporarily
         self.intercepted_data: List[Dict] = []
-        
-        self.stealth_path = Path(__file__).parent / "stealth.min.js"
 
-    async def init_browser(self):
-        """Initialize the headless Chromium browser with stealth."""
-        if self.playwright is None:
-            self.playwright = await async_playwright().start()
-            
-        if self.browser is None:
-            self.browser = await self.playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox"
-                ]
-            )
-            
-        if self.context is None:
+    async def init_fetcher(self):
+        """Initialize the StealthyFetcher via BrowserManager."""
+        if self.fetcher is None:
             settings = get_settings()
-            proxy = {"server": settings.proxy_url} if settings.proxy_url else None
+            proxy = settings.proxy_url if settings.proxy_url else None
             
-            self.context = await self.browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            self.fetcher = await browser_manager.new_fetcher(
+                headless=True,
                 proxy=proxy
             )
-            
-            if self.stealth_path.exists():
-                await self.context.add_init_script(path=str(self.stealth_path))
-                
-        if self.page is None:
-            self.page = await self.context.new_page()
+            # Scrapling StealthyFetcher doesn't need external stealth.min.js usually
+            # as it has its own built-in stealth mechanisms.
 
-    async def _handle_response(self, response, target_url_fragment: str):
-        """Intercept responses containing our target URL fragment."""
-        if target_url_fragment in response.url and response.request.resource_type in ["fetch", "xhr"]:
+    async def _scroll_to_bottom(self, max_scrolls: int = 5, delay: float = 2.0):
+        """Simulate human scrolling using Scrapling's page evaluation."""
+        for _ in range(max_scrolls):
+            # StealthyFetcher has access to the playwright page via .page
+            await self.fetcher.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(delay)
+
+    async def _handle_response(self, response):
+        """Internal callback for response interception."""
+        # Note: In Scrapling, you can access the underlying playwright page to add listeners
+        target_search = "/api/search/general/"
+        target_comments = "/api/comment/list/"
+        
+        if (target_search in response.url or target_comments in response.url) and response.request.resource_type in ["fetch", "xhr"]:
             try:
-                # Wait for response body, handle potentially 204 or empty responses
                 if response.status == 200:
                     body = await response.json()
                     self.intercepted_data.append(body)
             except Exception:
                 pass
 
-    async def _scroll_to_bottom(self, max_scrolls: int = 5, delay: float = 2.0):
-        """Simulate human scrolling to trigger lazy loading API requests."""
-        for _ in range(max_scrolls):
-            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(delay)
-
     async def search_keyword(self, keyword: str, limit: int = 20) -> List[Dict]:
         """
-        Search TikTok via Playwright interception.
+        Search TikTok via StealthyFetcher interception.
         """
-        await self.init_browser()
+        await self.init_fetcher()
         self.intercepted_data.clear()
         
-        target_api = "/api/search/general/"
-        
-        # Setup listener
-        async def on_response(response):
-            await self._handle_response(response, target_api)
-            
-        self.page.on("response", on_response)
+        # Access raw playwright page to setup listener
+        page = self.fetcher.page
+        page.on("response", self._handle_response)
         
         url = f"https://www.tiktok.com/search?q={urllib.parse.quote(keyword)}"
-        logger.info(f"[TikTok Playwright] Navigating to search: {url}")
+        logger.info(f"[TikTok Scrapling] Navigating to search: {url}")
         
         try:
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            # Use Scrapling's navigate-and-extract or just goto
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             
-            # Need to clear a possible captcha or login modal? We just scroll.
-            scroll_count = (limit // 12) + 2  # TikTok loads ~12 items per page
+            scroll_count = (limit // 12) + 2
             await self._scroll_to_bottom(max_scrolls=scroll_count, delay=3.0)
             
         except Exception as e:
-            logger.warning(f"[TikTok Playwright] Search timeout or error: {e}")
+            logger.warning(f"[TikTok Scrapling] Search timeout or error: {e}")
             
         finally:
-            self.page.remove_listener("response", on_response)
+            page.remove_listener("response", self._handle_response)
             
         # Parse all intercepted data
         videos = []
         for payload in self.intercepted_data:
             items = payload.get("data", [])
             for item in items:
-                if item.get("type") == 1:  # Type 1 is video (aweme)
+                if item.get("type") == 1:
                     info = item.get("item", {})
                     if info:
                         videos.append(info)
                         
-        logger.info(f"[TikTok Playwright] Intercepted {len(videos)} raw video items")
+        logger.info(f"[TikTok Scrapling] Intercepted {len(videos)} raw video items")
         return videos[:limit]
 
     async def get_comments(self, video_id: str, limit: int = 50, username: str = "tiktok") -> List[Dict]:
         """
         Get comments by navigating to the video URL and scrolling.
         """
-        await self.init_browser()
+        await self.init_fetcher()
         self.intercepted_data.clear()
         
-        target_api = "/api/comment/list/"
+        page = self.fetcher.page
+        page.on("response", self._handle_response)
         
-        async def on_response(response):
-            await self._handle_response(response, target_api)
-            
-        self.page.on("response", on_response)
-        
-        # Navigate to arbitrary user's video endpoint is enough to trigger comment loading
-        # Because we only have video_id sometimes, we might need a dummy username.
-        # Format: https://www.tiktok.com/@user/video/{video_id}
         url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+        logger.info(f"[TikTok Scrapling] Navigating to video: {url}")
         
         try:
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            # Scroll down to load comments
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             scroll_count = (limit // 20) + 2
             await self._scroll_to_bottom(max_scrolls=scroll_count, delay=2.5)
         except Exception as e:
-            logger.warning(f"[TikTok Playwright] Comments timeout or error: {e}")
+            logger.warning(f"[TikTok Scrapling] Comments timeout or error: {e}")
         finally:
-            self.page.remove_listener("response", on_response)
+            page.remove_listener("response", self._handle_response)
             
-        comments = []
+        # Deduplicate and extract comments from intercepted payloads
+        all_comments = []
+        for payload in self.intercepted_data:
+            comments_list = payload.get("comments", [])
+            if comments_list:
+                all_comments.extend(comments_list)
+        
+        return all_comments[:limit]
+
+    async def close(self):
+        """Close the fetcher via BrowserManager."""
+        if self.fetcher:
+            await browser_manager.close_fetcher(self.fetcher)
+            self.fetcher = None
+
         for payload in self.intercepted_data:
             c_list = payload.get("comments", [])
             if c_list:

@@ -4,26 +4,33 @@ Uses twscrape for limited public content scraping.
 Scope: single URL parsing, public profile info, limited keyword search.
 """
 
+import asyncio
 import json
 import re
 from datetime import datetime, timezone
 from typing import Optional
 
+from scrapling import Fetcher
 from loguru import logger
-import httpx
 
 from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
 
 
 class XCrawler(BaseCrawler):
-    """X/Twitter platform crawler (Phase 3)."""
+    """X/Twitter platform crawler (Phase 3) using Scrapling Fetcher."""
 
     platform = "x"
 
     def __init__(self):
         super().__init__()
         self._twscrape_pool = None
-        logger.info("X/Twitter crawler initialized (Login-free Syndication mode)")
+        self._fetcher = Fetcher(
+            timeout=30000,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            }
+        )
+        logger.info("X/Twitter crawler initialized (Login-free Syndication mode with Scrapling)")
 
     async def _get_pool(self):
         """Lazy-initialize twscrape account pool for search."""
@@ -64,7 +71,7 @@ class XCrawler(BaseCrawler):
             return []
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get tweets from a user's profile using the login-free Syndication API."""
+        """Get tweets from a user's profile using the login-free Syndication API via Scrapling Fetcher."""
         await self._rate_limit()
         username = username.lstrip('@')
         logger.info(f"X user posts: '{username}', limit={limit}")
@@ -75,12 +82,17 @@ class XCrawler(BaseCrawler):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=15.0)
-                resp.raise_for_status()
+            def _do_fetch():
+                return self._fetcher.get(url, headers=headers)
+
+            response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+            
+            if response.status_code != 200:
+                logger.warning(f"X syndication API failed with status {response.status_code}")
+                return []
 
             # Parse the NEXT_DATA JSON blob
-            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', resp.text)
+            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text)
             if not match:
                 logger.warning(f"Could not find timeline data for user {username}")
                 return []

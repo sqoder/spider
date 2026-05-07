@@ -130,7 +130,7 @@ async def _download_media_x(url: str, source_id: str) -> None:
 
 
 async def _download_media_instagram(media_list: list, source_id: str) -> None:
-    """用 httpx 下载 Instagram 帖子中的图片和视频（通过直链）。"""
+    """使用 httpx 下载 Instagram 帖子中的图片和视频（通过直链）。"""
     if not media_list:
         print("      无可用媒体链接")
         return
@@ -146,8 +146,8 @@ async def _download_media_instagram(media_list: list, source_id: str) -> None:
         )
     }
 
+    idx = 1
     async with httpx.AsyncClient(headers=headers, timeout=30.0, follow_redirects=True) as client:
-        idx = 1
         for m in media_list:
             murl = m.get("url")
             if murl:
@@ -173,7 +173,7 @@ async def _download_media_instagram(media_list: list, source_id: str) -> None:
 
 
 async def _download_media_reddit(media_list: list, source_id: str, post_url: str = None) -> None:
-    """用 httpx 下载 Reddit 帖子中的图片和图集媒体，如果是视频则用 yt-dlp 下载。"""
+    """使用 Scrapling Fetcher 下载 Reddit 帖子中的图片和图集媒体，如果是视频则用 yt-dlp 下载。"""
     if not media_list:
         print("      无可用媒体链接")
         return
@@ -203,8 +203,8 @@ async def _download_media_reddit(media_list: list, source_id: str, post_url: str
         except Exception as e:
             logger.debug(f"yt-dlp download failed: {e}")
 
-    # 用 httpx 下载常规图片 / 图集
-    import httpx
+    # 用 Scrapling 下载常规图片 / 图集
+    from scrapling import Fetcher
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -212,35 +212,38 @@ async def _download_media_reddit(media_list: list, source_id: str, post_url: str
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
+    fetcher = Fetcher(headers=headers, timeout=30000)
 
-    async with httpx.AsyncClient(headers=headers, timeout=30.0, follow_redirects=True) as client:
-        idx = 1
-        for m in media_list:
-            mtype = m.get("type")
-            murl = m.get("url")
-            if not murl or mtype not in ("image", "gallery"):
-                continue
+    idx = 1
+    for m in media_list:
+        mtype = m.get("type")
+        murl = m.get("url")
+        if not murl or mtype not in ("image", "gallery"):
+            continue
 
-            # 提取合适的文件后缀
-            ext = "jpg"
-            if "png" in murl.lower():
-                ext = "png"
-            elif "gif" in murl.lower():
-                ext = "gif"
+        # 提取合适的文件后缀
+        ext = "jpg"
+        if "png" in murl.lower():
+            ext = "png"
+        elif "gif" in murl.lower():
+            ext = "gif"
 
-            fname = f"media_{idx}.{ext}"
-            fpath = media_dir / fname
+        fname = f"media_{idx}.{ext}"
+        fpath = media_dir / fname
 
-            try:
-                resp = await client.get(murl)
-                if resp.status_code == 200:
-                    fpath.write_bytes(resp.content)
-                    print(f"      已下载图片: {fname}  ({len(resp.content) / 1024:.1f} KB)")
-                    idx += 1
-                else:
-                    logger.debug(f"Failed to download Reddit media {murl}: HTTP {resp.status_code}")
-            except Exception as e:
-                logger.debug(f"Error downloading Reddit media {murl}: {e}")
+        try:
+            def _do_fetch():
+                return fetcher.get(murl)
+
+            resp = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+            if resp.status_code == 200:
+                fpath.write_bytes(resp.content)
+                print(f"      已下载图片: {fname}  ({len(resp.content) / 1024:.1f} KB)")
+                idx += 1
+            else:
+                logger.debug(f"Failed to download Reddit media {murl}: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.debug(f"Error downloading Reddit media {murl}: {e}")
 
 
 def _print_sep(platform: str) -> None:

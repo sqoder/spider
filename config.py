@@ -107,7 +107,7 @@ TIKTOK = {
 INSTAGRAM = {
     # 抓取模式: "keyword" | "url" | "user"
     # 注意: Instagram search 走 hashtag
-    "mode": "user",
+    "mode": "url",
 
     "keyword": "travel",
     "search_limit": 10,

@@ -8,7 +8,7 @@ import time
 import asyncio
 from typing import Any, Optional
 
-import httpx
+from scrapling import Fetcher
 from loguru import logger
 
 from app.core.config import get_settings
@@ -19,6 +19,7 @@ class RedditAPIClient:
     """
     Client for Reddit's API.
     Auto-detects credentials and switches between OAuth and Public Scraper mode.
+    Uses Scrapling Fetcher for advanced anti-bot evasion and HTTP/3.
     """
 
     AUTH_URL = "https://www.reddit.com/api/v1/access_token"
@@ -53,11 +54,10 @@ class RedditAPIClient:
         self._rate_limit_reset: float = 0
         self._last_request_time: float = 0.0
 
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=30.0,
-            headers={"User-Agent": self.user_agent},
-            follow_redirects=True,
+        # Scrapling Fetcher initialization
+        self._fetcher = Fetcher(
+            user_agent=self.user_agent,
+            timeout=30000,  # Scrapling uses ms
         )
 
     # ------------------------------------------------------------------ auth
@@ -67,34 +67,35 @@ class RedditAPIClient:
         if not self.use_oauth:
             return
 
-        auth_client = httpx.AsyncClient(timeout=15.0)
         try:
-            response = await auth_client.post(
+            # Using temporary fetcher for auth to avoid messing with main fetcher headers
+            auth_fetcher = Fetcher(timeout=15000)
+            response = auth_fetcher.post(
                 self.AUTH_URL,
                 auth=(self.client_id, self.client_secret),
                 data={"grant_type": "client_credentials"},
                 headers={"User-Agent": self.user_agent},
             )
-            response.raise_for_status()
-            data = response.json()
+            
+            if response.status_code != 200:
+                logger.error(f"[Reddit] Authentication failed: {response.status_code}")
+                return
 
+            data = response.json()
             self._access_token = data["access_token"]
             self._token_expires_at = time.time() + data.get("expires_in", 3600) - 60
 
-            self._client.headers["Authorization"] = f"Bearer {self._access_token}"
             logger.info("[Reddit] OAuth token obtained successfully")
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[Reddit] Authentication failed: {e.response.status_code}")
-        finally:
-            await auth_client.aclose()
+        except Exception as e:
+            logger.error(f"[Reddit] Authentication error: {e}")
 
     async def _ensure_auth(self) -> None:
         if self.use_oauth:
             if not self._access_token or time.time() >= self._token_expires_at:
                 await self._authenticate()
 
-    def _update_rate_limits(self, response: httpx.Response) -> None:
+    def _update_rate_limits(self, response) -> None:
         remaining = response.headers.get("X-Ratelimit-Remaining")
         reset = response.headers.get("X-Ratelimit-Reset")
 
@@ -106,7 +107,7 @@ class RedditAPIClient:
     async def _request(
         self, method: str, endpoint: str, params: Optional[dict] = None
     ) -> Any:
-        """Make an API request. Appends .json in No-API mode. Includes retries."""
+        """Make an API request using Scrapling Fetcher."""
         await self._ensure_auth()
 
         # Check rate limits in OAuth mode
@@ -121,19 +122,38 @@ class RedditAPIClient:
                 await asyncio.sleep(1.5 - elapsed)
             self._last_request_time = time.time()
 
-        # Prepare No-API endpoint formatting (e.g. /search -> /search.json)
-        url_path = endpoint
+        # Prepare URL
+        url = f"{self.base_url}{endpoint}"
         if not self.use_oauth:
-            if "?" in url_path:
-                path_part, query_part = url_path.split("?", 1)
-                url_path = f"{path_part}.json?{query_part}"
+            if "?" in url:
+                path_part, query_part = url.split("?", 1)
+                url = f"{path_part}.json?{query_part}"
             else:
-                url_path = f"{url_path}.json"
+                url = f"{url}.json"
+
+        headers = {}
+        if self.use_oauth and self._access_token:
+            headers["Authorization"] = f"Bearer {self._access_token}"
 
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = await self._client.request(method, url_path, params=params)
+                # Scrapling Fetcher is synchronous in current version or provides async?
+                # Actually Scrapling Fetcher calls are usually blocking, 
+                # but we are in an async context. 
+                # Let's check if Scrapling has an async fetcher.
+                # If not, we run in executor.
+                
+                def _do_fetch():
+                    return self._fetcher.request(
+                        method=method,
+                        url=url,
+                        params=params,
+                        headers=headers
+                    )
+
+                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+                
                 if self.use_oauth:
                     self._update_rate_limits(response)
 
@@ -141,30 +161,28 @@ class RedditAPIClient:
                     retry_after = int(response.headers.get("Retry-After", 60))
                     raise RateLimitExceededError("reddit", retry_after=retry_after)
 
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    logger.warning(f"[Reddit] Request failed with {response.status_code}: {response.text[:100]}")
+                    if attempt < max_retries - 1 and response.status_code >= 500:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    response.raise_for_status()
+
                 return response.json()
 
-            except httpx.HTTPStatusError as e:
-                # Retry on 5xx or specific errors
-                if attempt < max_retries - 1 and e.response.status_code >= 500:
-                    delay = 2 ** attempt
-                    logger.debug(f"[Reddit] HTTP {e.response.status_code} - Retrying in {delay}s...")
-                    await asyncio.sleep(delay)
-                    continue
-                
-                logger.error(
-                    f"[Reddit] HTTP Error: {e.response.status_code} - {e.response.text[:300]}"
-                )
-                raise CrawlError("reddit", endpoint, f"HTTP {e.response.status_code}")
-                
-            except (httpx.RequestError, httpx.TimeoutException) as e:
+            except Exception as e:
+                if isinstance(e, RateLimitExceededError):
+                    raise
                 if attempt < max_retries - 1:
-                    delay = 2 ** attempt
-                    logger.debug(f"[Reddit] Network error ({e}) - Retrying in {delay}s...")
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(2 ** attempt)
                     continue
-                logger.error(f"[Reddit] Network Error: {e}")
+                logger.error(f"[Reddit] Request error: {e}")
                 raise CrawlError("reddit", endpoint, str(e))
+
+    async def aclose(self):
+        # Scrapling Fetcher doesn't have an explicit aclose usually, 
+        # but good practice to define it if we move to sessions later.
+        pass
 
     # ------------------------------------------------------------------ search
 

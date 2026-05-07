@@ -4,10 +4,11 @@ Handles search, video details, channel info, and comments.
 Includes quota tracking to stay within daily limits.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import httpx
+from scrapling import Fetcher
 from loguru import logger
 
 from app.core.config import get_settings
@@ -18,13 +19,9 @@ from app.core.proxy_manager import proxy_manager
 
 class YouTubeAPIClient:
     """
-    Client for YouTube Data API v3.
-
-    Quota costs (approximate):
-        - search.list: 100 units
-        - videos.list: 1 unit
-        - channels.list: 1 unit
-        - commentThreads.list: 1 unit
+    Client for YouTube Data API v3 using Scrapling Fetcher.
+    Handles search, video details, channel info, and comments.
+    Includes quota tracking to stay within daily limits.
     """
 
     BASE_URL = "https://www.googleapis.com/youtube/v3"
@@ -47,10 +44,10 @@ class YouTubeAPIClient:
         if not self.api_key:
             raise APIKeyMissingError("youtube", "YOUTUBE_API_KEY")
 
-        self._client = httpx.AsyncClient(
-            base_url=self.BASE_URL,
-            timeout=30.0,
-            headers={"Accept": "application/json"},
+        # Initialize base fetcher
+        self._fetcher = Fetcher(
+            timeout=30000,
+            headers={"Accept": "application/json"}
         )
 
     def _check_quota(self, endpoint: str) -> None:
@@ -64,37 +61,46 @@ class YouTubeAPIClient:
             )
 
     async def _request(self, endpoint: str, params: dict, retry_count: int = 2) -> dict:
-        """Make an API request with quota tracking and proxy rotation."""
+        """Make an API request with quota tracking and proxy rotation using Scrapling."""
         self._check_quota(endpoint)
 
         params["key"] = self.api_key
-        url = f"/{endpoint}"
+        url = f"{self.BASE_URL}/{endpoint}"
 
         for attempt in range(retry_count + 1):
-            proxies = None
+            proxy_url = None
             if proxy_manager.enabled:
                 proxy_url = proxy_manager.get_proxy()
-                if proxy_url:
-                    proxies = {"http://": proxy_url, "https://": proxy_url}
 
             try:
-                if proxies:
-                    async with httpx.AsyncClient(proxies=proxies, timeout=30.0) as client:
-                        response = await client.get(self.BASE_URL + url, params=params)
-                else:
-                    response = await self._client.get(url, params=params)
+                def _do_fetch():
+                    # If proxy is needed, we might need a fresh fetcher or use session
+                    # For simplicity and thread-safety in executor, we use a local fetcher or configure proxy
+                    f = self._fetcher
+                    if proxy_url:
+                        f = Fetcher(proxy=proxy_url, timeout=30000, headers={"Accept": "application/json"})
+                    
+                    return f.get(url, params=params)
+
+                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
                 
-                response.raise_for_status()
+                if response.status_code != 200:
+                    logger.warning(f"YouTube API request failed (status {response.status_code}): {response.text[:100]}")
+                    if attempt < retry_count and response.status_code >= 500:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    response.raise_for_status()
+
                 self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
                 return response.json()
-            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            except Exception as e:
                 if attempt < retry_count:
                     logger.warning(f"YouTube API request failed (attempt {attempt+1}): {e}. Retrying...")
+                    await asyncio.sleep(2 ** attempt)
                     continue
                 logger.error(f"YouTube API error after {retry_count} retries: {e}")
                 raise CrawlError("youtube", endpoint, str(e))
 
-        # Should never reach here, but guard against implicit None return
         raise CrawlError("youtube", endpoint, "_request exited retry loop without result")
 
     async def search_videos(
