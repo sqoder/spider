@@ -1,29 +1,69 @@
-name: Pytest
+name: Quality
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main", "fix/stabilize-youtube-mvp"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Test with pytest
-      run: |
-        pytest tests/
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-base.txt
+          pip install ruff pyright
+
+      - name: Compile
+        run: python -m compileall -q app tests
+
+      - name: Import scan
+        run: |
+          python - <<'PY'
+          import importlib
+          import pathlib
+          import sys
+
+          errors = []
+          for path in pathlib.Path("app").rglob("*.py"):
+              if path.name == "__init__.py":
+                  continue
+              # Convert path to module name
+              parts = path.with_suffix("").parts
+              module = ".".join(parts)
+              try:
+                  importlib.import_module(module)
+              except Exception as exc:
+                  errors.append((module, type(exc).__name__, str(exc)))
+
+          for module, exc_type, message in errors:
+              print(f"{module}: {exc_type}: {message}")
+          if errors:
+              sys.exit(1)
+          PY
+
+      - name: Ruff lint
+        run: ruff check app tests
+
+      - name: Ruff format
+        run: ruff format --check app tests
+
+      - name: Type check
+        run: pyright app tests
+
+      - name: Pytest
+        run: pytest
