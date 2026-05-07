@@ -1,93 +1,88 @@
 # GlobalMediaCrawler 🕷️
 
-A robust, multi-platform media crawler that unifies data from YouTube, Reddit, TikTok, Instagram, and X/Twitter into a standardized schema. Built with FastAPI, Celery, Redis, PostgreSQL, and SQLAlchemy.
+A robust, multi-platform media crawler that unifies data from YouTube, Reddit, TikTok, Instagram, and X/Twitter into a standardized schema.
 
-## 🚀 Features
+## 🚀 Overview
 
-- **Unified Data Schema**: All platforms normalize content into `Task`, `Post`, and `Author` models.
-- **Asynchronous Processing**: Uses Celery and Redis to handle tasks in the background with auto-retry mechanisms.
-- **Rate Limit & Proxy**: Advanced request routing and rate limit protections per platform.
-- **Supported Platforms & Strategies**:
-  - **YouTube**: Official API + Playwright fallback.
-  - **Reddit**: OAuth2 scraping agent.
-  - **TikTok**: Subprocess integration with `gallery-dl` and `yt-dlp` (supports single video bypass).
-  - **Instagram**: Deep extraction via `gallery-dl` (Cookie auth required for stability).
-  - **X / Twitter**: Web scraping without API keys via `twscrape`.
+This project provides a unified orchestration layer for crawling social media content. It routes all execution (API, CLI, Workers) through a shared service layer to ensure consistent behavior across different execution models.
 
-## 📦 Setup & Installation
+**Note:** `docs/superpowers/` contains historical planning artifacts and implementation history for agentic workers. These are not intended as user-facing documentation.
 
-1. **Clone the repository:**
+## 📦 Supported Setup Paths
+
+### Mode 1: Simple Mode (Local SQLite + File Export)
+Ideal for personal use and quick scrapes without complex infrastructure.
+
+1. **Setup Environment:**
    ```bash
-   git clone https://github.com/sqoder/GlobalMediaCrawler.git
-   cd GlobalMediaCrawler
-   ```
-
-2. **Setup virtual environment:**
-   ```bash
-   python -m venv venv
+   python3.11 -m venv venv
    source venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements-base.txt
    ```
 
-3. **Install external dependencies (for TikTok / X):**
-   ```bash
-   # Make sure you have gallery-dl, yt-dlp, and twscrape
-   pip install gallery-dl yt-dlp twscrape playwright
-   playwright install
-   ```
-
-4. **Environment Variables:**
-   Copy `.env.example` to `.env` and fill in the necessary keys.
+2. **Configure:**
    ```bash
    cp .env.example .env
+   # Set SIMPLE_MODE=true in .env
    ```
 
-5. **Start Infrastructure (Redis & PostgreSQL):**
+3. **Run via CLI:**
+   ```bash
+   python run.py search --platform youtube --keyword "AI news" --limit 5
+   ```
+
+4. **Run via API:**
+   ```bash
+   uvicorn app.main:app --reload
+   # Health check: curl http://localhost:8000/api/health
+   ```
+
+### Mode 2: Full Mode (PostgreSQL + Redis + Celery)
+Ideal for production-scale distributed crawling.
+
+1. **Start Infrastructure:**
    ```bash
    docker-compose up -d
    ```
 
-6. **Initialize Database:**
+2. **Setup Environment & DB:**
    ```bash
+   pip install -r requirements-base.txt
+   cp .env.example .env
+   # Ensure DATABASE_URL and REDIS_URL are correct in .env
    alembic upgrade head
    ```
 
-7. **Run the API & Worker:**
+3. **Run API & Worker:**
    ```bash
-   # Start the API server
+   # Terminal 1: API
    uvicorn app.main:app --reload
 
-   # Start the Celery Worker
-   celery -A app.core.task_queue:celery_app worker --loglevel=info -Q crawl,media
-
-   # Start the Celery Beat scheduler
-   celery -A app.core.task_queue:celery_app beat --loglevel=info
+   # Terminal 2: Celery Worker
+   celery -A app.core.task_queue:celery_app worker --loglevel=info
    ```
 
-## 🛠 Platform Specific Configurations
+## 🛠 Features & Architecture
 
-- **YouTube**: Provide `YOUTUBE_API_KEY` in your `.env`.
-- **Reddit**: Provide `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`.
-- **TikTok & Instagram**: Provide `TIKTOK_COOKIES_FILE` and `INSTAGRAM_COOKIES_FILE` pointing to a local `cookies.txt` file exported from your browser.
-- **X/Twitter**: Run `twscrape` CLI to add accounts:
-  ```bash
-  twscrape add_accounts accounts.txt  # Format: username:password:email:email_password
-  twscrape login_accounts
-  ```
+- **Unified Service Layer**: `app/services/crawl_service.py` owns the crawl flow.
+- **Pluggable Crawlers**: `app/crawlers/` supports YouTube (API/Playwright/yt-dlp), Reddit, TikTok, Instagram, and X.
+- **Standardized Storage**: `app/storage/` supports JSONL, CSV, and PostgreSQL.
+- **Media Download**: `app/services/media_service.py` handles media extraction.
 
-## 🧪 Testing
+## 🧪 Quality Gates
 
-The repository uses `pytest` and `sqlite` memory databases for robust integration testing. Run tests with:
+We enforce high code quality via automated tools:
 ```bash
-pytest tests/
-```
+# Run all tests
+venv/bin/python -m pytest
 
-## 📜 Architecture overview
-- `app/api/`: FastAPI endpoint routing.
-- `app/core/`: Settings, proxies, and rate limiting logic.
-- `app/crawlers/`: Pluggable base architecture containing all the scrapers.
-- `app/db/` & `app/models/`: SQLAlchemy connection & Declarative Base.
-- `app/workers/`: Celery task definitions (entry point for distributed scrapers).
+# Lint and Format check
+venv/bin/python -m ruff check app tests
+venv/bin/python -m ruff format --check app tests
+
+# Type check
+venv/bin/python -m pyright app tests
+```
 
 ---
 Developed by sqoder.
