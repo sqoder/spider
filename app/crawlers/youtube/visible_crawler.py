@@ -84,7 +84,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
             logger.exception(f"[YouTube visible] Search failed: {exc}")
             return results[:limit]
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         await self._rate_limit()
@@ -146,7 +146,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
                 },
             )
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         logger.info(f"[YouTube visible] Fetching comments for: {post_id}")
@@ -623,7 +623,7 @@ class VisibleYouTubeCrawler(BaseCrawler):
         except Exception as exc:
             logger.warning(f"[YouTube visible] DOM comments failed: {exc}")
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
         return results[:limit]
 

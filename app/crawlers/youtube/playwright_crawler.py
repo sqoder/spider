@@ -159,7 +159,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         except Exception as e:
             logger.error(f"[Playwright] Search failed: {e}")
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
         return results
 
@@ -295,7 +295,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
             logger.error(f"[Playwright] Detail extraction failed: {e}")
             return CrawlResult(platform=self.platform, source_id="error", url=url)
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
     async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
         """Extract comments with multi-tier fallbacks: Innertube -> yt-dlp -> Playwright."""
@@ -435,7 +435,7 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
         except Exception as e:
             logger.error(f"[Playwright] Final fallback comment extraction failed: {e}")
         finally:
-            await browser_manager.close_context(fetcher)
+            await browser_manager.close_fetcher(fetcher)
 
         return results
 
