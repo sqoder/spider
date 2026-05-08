@@ -47,35 +47,36 @@ class VisibleYouTubeCrawler(BaseCrawler):
         logger.info(f"[YouTube visible] Searching: {keyword}")
         await self._rate_limit()
         fetcher = await self._new_fetcher()
-        page = fetcher.page  # type: ignore[attr-defined]
         results: list[CrawlResult] = []
         page_url = f"{YOUTUBE_ORIGIN}/results?search_query={quote_plus(keyword)}"
 
         try:
             await self._goto_with_consent(fetcher, page_url)
-            await self._scroll_for_items(page, limit)
-            yt_data = await self._yt_initial_data(page)
-            if not yt_data:
-                logger.warning("[YouTube visible] ytInitialData missing on search page")
-                return []
+            page = getattr(fetcher, "page", None)
+            if page:
+                await self._scroll_for_items(page, limit)
+                yt_data = await self._yt_initial_data(page)
+                if not yt_data:
+                    logger.warning("[YouTube visible] ytInitialData missing on search page")
+                    return []
 
-            rank = 1
-            for item in self._iter_video_renderers(yt_data):
-                result = self.parse_search_video_renderer(
-                    item["renderer"],
-                    rank=rank,
-                    page_url=page_url,
-                    full_yt_initial_data=yt_data,
-                    renderer_type=item["type"],
-                )
-                if result.source_id:
-                    results.append(result)
-                    rank += 1
-                if len(results) >= limit:
-                    break
+                rank = 1
+                for item in self._iter_video_renderers(yt_data):
+                    result = self.parse_search_video_renderer(
+                        item["renderer"],
+                        rank=rank,
+                        page_url=page_url,
+                        full_yt_initial_data=yt_data,
+                        renderer_type=item["type"],
+                    )
+                    if result.source_id:
+                        results.append(result)
+                        rank += 1
+                    if len(results) >= limit:
+                        break
 
-            if results:
-                return results[:limit]
+                if results:
+                    return results[:limit]
 
             logger.warning("[YouTube visible] No video renderers found in search data")
             return []
@@ -106,14 +107,14 @@ class VisibleYouTubeCrawler(BaseCrawler):
         logger.info(f"[YouTube visible] Extracting detail: {url}")
         await self._rate_limit()
         fetcher = await self._new_fetcher()
-        page = fetcher.page  # type: ignore[attr-defined]
         ytdlp_info: dict[str, Any] | None = None
 
         try:
             await self._goto_with_consent(fetcher, url)
             await self._expand_description(fetcher)
-            yt_data = await self._yt_initial_data(page)
-            dom_snapshot = await self._dom_snapshot(page)
+            page = getattr(fetcher, "page", None)
+            yt_data = await self._yt_initial_data(page) if page else None
+            dom_snapshot = await self._dom_snapshot(page) if page else {}
 
             try:
                 ytdlp_info = await self.ytdlp.extract_info(url)
@@ -426,30 +427,50 @@ class VisibleYouTubeCrawler(BaseCrawler):
         )
 
     async def _new_fetcher(self) -> StealthyFetcher:
-        return await browser_manager.new_fetcher(
+        fetcher = await browser_manager.new_fetcher(
             cookies_file=self.settings.youtube_cookies_file,
             locale="en-US",
             user_agent=YOUTUBE_USER_AGENT,
         )
+        return fetcher
 
     async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str) -> None:
-        await fetcher.page.goto(url, wait_until="domcontentloaded")  # type: ignore[attr-defined]
-        await self._handle_consent(fetcher)
-        import contextlib
+        page = getattr(fetcher, "page", None)
+        if not page:
+             # try a basic fetch if page is not initialized directly
+             from app.core.proxy_manager import proxy_manager
+             proxy = proxy_manager.get_proxy()
+             await fetcher.fetch(url, proxy=proxy)
+             page = getattr(fetcher, "page", None)
 
-        with contextlib.suppress(Exception):
-            await fetcher.page.wait_for_load_state("networkidle", timeout=10000)  # type: ignore[attr-defined]
+        if page:
+             await page.goto(url, wait_until="domcontentloaded")
+             await self._handle_consent(fetcher)
+             import contextlib
+
+             with contextlib.suppress(Exception):
+                  await page.wait_for_load_state("networkidle", timeout=10000)
+        else:
+             from app.core.proxy_manager import proxy_manager
+             proxy = proxy_manager.get_proxy()
+             await fetcher.fetch(url, proxy=proxy)
 
     async def _handle_consent(self, fetcher: StealthyFetcher) -> None:
         # Scrapling adaptive find for consent button
         try:
-            button = fetcher.find_similar("Accept all", "button")  # type: ignore[attr-defined]
+            button = fetcher.find_similar("Accept all", "button")
             if button:
-                button.click()
-                await fetcher.page.wait_for_load_state("domcontentloaded")  # type: ignore[attr-defined]
+                await button.click()
+                page = getattr(fetcher, "page", None)
+                if page:
+                    await page.wait_for_load_state("domcontentloaded")
                 return
         except Exception:
             pass
+
+        page = getattr(fetcher, "page", None)
+        if not page:
+            return
 
         selectors = [
             "button[aria-label='Accept all']",
@@ -458,7 +479,6 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "ytd-button-renderer:has-text('Accept all')",
             "form[action*='consent.youtube.com/save'] button",
         ]
-        page = fetcher.page  # type: ignore[attr-defined]
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -470,6 +490,8 @@ class VisibleYouTubeCrawler(BaseCrawler):
                 continue
 
     async def _scroll_for_items(self, page: Page, limit: int) -> None:
+        if not page:
+            return
         previous_count = 0
         stale_rounds = 0
         for _ in range(8):
@@ -489,13 +511,17 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _expand_description(self, fetcher: StealthyFetcher) -> None:
         # Scrapling adaptive find for "more" button
         try:
-            button = fetcher.find_similar("more", "button")  # type: ignore[attr-defined]
+            button = fetcher.find_similar("more", "button")
             if button:
-                button.click()
+                await button.click()
                 await asyncio.sleep(0.5)
                 return
         except Exception:
             pass
+
+        page = getattr(fetcher, "page", None)
+        if not page:
+            return
 
         selectors = [
             "#description tp-yt-paper-button#expand",
@@ -504,7 +530,6 @@ class VisibleYouTubeCrawler(BaseCrawler):
             "button:has-text('more')",
             "button:has-text('Show more')",
         ]
-        page = fetcher.page  # type: ignore[attr-defined]
         for selector in selectors:
             try:
                 button = page.locator(selector).first
@@ -516,12 +541,16 @@ class VisibleYouTubeCrawler(BaseCrawler):
                 continue
 
     async def _yt_initial_data(self, page: Page) -> dict[str, Any] | None:
+        if not page:
+            return None
         try:
             return await page.evaluate("() => window.ytInitialData || null")
         except Exception:
             return None
 
     async def _dom_snapshot(self, page: Page) -> dict[str, Any]:
+        if not page:
+            return {}
         try:
             return await page.evaluate(
                 """
@@ -538,65 +567,66 @@ class VisibleYouTubeCrawler(BaseCrawler):
     async def _get_comments_from_dom(self, video_id: str, limit: int) -> list[CommentResult]:
         url = f"{YOUTUBE_ORIGIN}/watch?v={video_id}"
         fetcher = await self._new_fetcher()
-        page = fetcher.page  # type: ignore[attr-defined]
         results: list[CommentResult] = []
         seen: set[str] = set()
         stale_rounds = 0
 
         try:
             await self._goto_with_consent(fetcher, url)
-            await page.mouse.wheel(0, 1800)
-            await asyncio.sleep(1.5)
-
-            for _ in range(10):
-                await self._expand_comment_replies(page)
-                data = await page.evaluate(
-                    """
-                    () => Array.from(document.querySelectorAll('ytd-comment-thread-renderer')).map((thread, index) => {
-                        const root = thread.querySelector('ytd-comment-view-model, ytd-comment-renderer') || thread;
-                        const content = root.querySelector('#content-text');
-                        const author = root.querySelector('#author-text, #author-name a, h3 a');
-                        const published = root.querySelector('#published-time-text, .published-time-text');
-                        const likes = root.querySelector('#vote-count-middle, #vote-count-left');
-                        const replyCount = thread.querySelector('#more-replies button, ytd-button-renderer#more-replies');
-                        return {
-                            index,
-                            contentText: content ? content.innerText.trim() : '',
-                            authorName: author ? author.innerText.trim() : '',
-                            authorUrl: author ? author.href : null,
-                            publishedText: published ? published.innerText.trim() : '',
-                            likeCountText: likes ? likes.innerText.trim() : '',
-                            replyCountText: replyCount ? replyCount.innerText.trim() : '',
-                            rawText: thread.innerText.slice(0, 5000)
-                        };
-                    })
-                    """
-                )
-                added = 0
-                for row in data:
-                    if not row.get("contentText"):
-                        continue
-                    stable_hash = hashlib.sha1(
-                        (row.get("contentText") or "").encode("utf-8")
-                    ).hexdigest()[:12]
-                    comment_id = f"dom_{video_id}_{row.get('index')}_{stable_hash}"
-                    if comment_id in seen:
-                        continue
-                    seen.add(comment_id)
-                    position = len(results) + 1
-                    results.append(self._parse_dom_comment(row, comment_id, position, url, limit))
-                    added += 1
-                    if len(results) >= limit:
-                        return results[:limit]
-
-                if added == 0:
-                    stale_rounds += 1
-                else:
-                    stale_rounds = 0
-                if stale_rounds >= 2:
-                    break
-                await page.mouse.wheel(0, 2200)
+            page = getattr(fetcher, "page", None)
+            if page:
+                await page.mouse.wheel(0, 1800)
                 await asyncio.sleep(1.5)
+
+                for _ in range(10):
+                    await self._expand_comment_replies(page)
+                    data = await page.evaluate(
+                        """
+                        () => Array.from(document.querySelectorAll('ytd-comment-thread-renderer')).map((thread, index) => {
+                            const root = thread.querySelector('ytd-comment-view-model, ytd-comment-renderer') || thread;
+                            const content = root.querySelector('#content-text');
+                            const author = root.querySelector('#author-text, #author-name a, h3 a');
+                            const published = root.querySelector('#published-time-text, .published-time-text');
+                            const likes = root.querySelector('#vote-count-middle, #vote-count-left');
+                            const replyCount = thread.querySelector('#more-replies button, ytd-button-renderer#more-replies');
+                            return {
+                                index,
+                                contentText: content ? content.innerText.trim() : '',
+                                authorName: author ? author.innerText.trim() : '',
+                                authorUrl: author ? author.href : null,
+                                publishedText: published ? published.innerText.trim() : '',
+                                likeCountText: likes ? likes.innerText.trim() : '',
+                                replyCountText: replyCount ? replyCount.innerText.trim() : '',
+                                rawText: thread.innerText.slice(0, 5000)
+                            };
+                        })
+                        """
+                    )
+                    added = 0
+                    for row in data:
+                        if not row.get("contentText"):
+                            continue
+                        stable_hash = hashlib.sha1(
+                            (row.get("contentText") or "").encode("utf-8")
+                        ).hexdigest()[:12]
+                        comment_id = f"dom_{video_id}_{row.get('index')}_{stable_hash}"
+                        if comment_id in seen:
+                            continue
+                        seen.add(comment_id)
+                        position = len(results) + 1
+                        results.append(self._parse_dom_comment(row, comment_id, position, url, limit))
+                        added += 1
+                        if len(results) >= limit:
+                            return results[:limit]
+
+                    if added == 0:
+                        stale_rounds += 1
+                    else:
+                        stale_rounds = 0
+                    if stale_rounds >= 2:
+                        break
+                    await page.mouse.wheel(0, 2200)
+                    await asyncio.sleep(1.5)
         except Exception as exc:
             logger.warning(f"[YouTube visible] DOM comments failed: {exc}")
         finally:
@@ -605,6 +635,8 @@ class VisibleYouTubeCrawler(BaseCrawler):
         return results[:limit]
 
     async def _expand_comment_replies(self, page: Page) -> None:
+        if not page:
+            return
         try:
             buttons = page.locator(
                 "ytd-button-renderer#more-replies button, "

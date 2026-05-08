@@ -26,11 +26,36 @@ class YtdlpClient:
         settings = get_settings()
         self.download_dir = settings.media_path / "youtube"
 
+    def _get_base_args(self) -> list[str]:
+        """Get base yt-dlp arguments including rate-limiting bypass."""
+        # Using a fixed browser User-Agent can help bypass some 429s
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        args = [
+            "yt-dlp",
+            "--no-playlist",
+            "--ignore-errors",
+            "--user-agent", user_agent,
+            # Add anti-ban options
+            "--sleep-requests", "1",
+            "--sleep-interval", "2",
+            "--max-sleep-interval", "5",
+            # Sometimes legacy helps with 429
+            "--extractor-args", "youtube:player_client=default,web,android",
+        ]
+        return args
+
     async def _run_command(
-        self, cmd: list[str], url: str, timeout: int = 300, retry_count: int = 2
+        self, cmd_args: list[str], url: str, timeout: int = 300, retry_count: int = 2
     ) -> tuple[bytes, bytes, int]:
         """Run yt-dlp command with proxy rotation, cookies, and retries."""
         settings = get_settings()
+        
+        # Start with base args
+        cmd = self._get_base_args()
+        # Add specific command args (remove 'yt-dlp' if it's the first element)
+        cmd.extend(cmd_args[1:] if cmd_args[0] == "yt-dlp" else cmd_args)
+
         for attempt in range(retry_count + 1):
             current_cmd = cmd.copy()
 
@@ -43,6 +68,10 @@ class YtdlpClient:
             # Add cookies
             if settings.youtube_cookies_file and os.path.exists(settings.youtube_cookies_file):
                 current_cmd.extend(["--cookies", settings.youtube_cookies_file])
+
+            # URL is usually at the end, but make sure it's passed
+            if url not in current_cmd:
+                current_cmd.append(url)
 
             try:
                 process = await asyncio.create_subprocess_exec(
@@ -70,10 +99,17 @@ class YtdlpClient:
                     logger.warning(
                         f"yt-dlp command failed (attempt {attempt + 1}): {error_msg}. Retrying with different proxy..."
                     )
+                    
+                    # If we got 429 Too Many Requests or Timeout, we should sleep before retry
+                    if "429" in error_msg or "Too Many Requests" in error_msg or "timed out" in error_msg.lower() or "read timed out" in error_msg.lower():
+                        logger.warning("YouTube Rate Limit (429) or Timeout detected. Sleeping for 10 seconds before retry...")
+                        await asyncio.sleep(10)
+                        
                     continue
             except TimeoutError as e:
                 if attempt < retry_count:
-                    logger.warning(f"yt-dlp command timed out (attempt {attempt + 1}). Retrying...")
+                    logger.warning(f"yt-dlp command timed out (attempt {attempt + 1}). Retrying in 10s...")
+                    await asyncio.sleep(10)
                     continue
                 raise MediaDownloadError(url, f"Timed out after {retry_count} retries") from e
             except Exception as e:
@@ -112,9 +148,6 @@ class YtdlpClient:
             "yt-dlp",
             "--dump-json",
             "--no-download",
-            "--no-playlist",
-            "--ignore-errors",
-            url,
         ]
 
         stdout, stderr, returncode = await self._run_command(cmd, url)
@@ -140,20 +173,17 @@ class YtdlpClient:
             "yt-dlp",
             "--dump-json",
             "--no-download",
-            "--no-playlist",
-            "--ignore-errors",
             "-P",
             str(self.download_dir),
             "--write-comments",
             "--extractor-args",
-            f"youtube:max_comments={max_val},{max_val},{max_val},{max_val}",
+            f"youtube:max_comments={max_val},{max_val},{max_val},{max_val};player_client=default,web,android",
             "--write-subs",
             "--write-auto-subs",
             "--write-thumbnail",
             "--write-info-json",
             "--sub-langs",
             "en,zh-Hans,zh-Hant",
-            url,
         ]
 
         stdout, stderr, returncode = await self._run_command(cmd, url)
@@ -174,12 +204,9 @@ class YtdlpClient:
             "yt-dlp",
             "--dump-json",
             "--no-download",
-            "--no-playlist",
-            "--ignore-errors",
             "--write-comments",
             "--extractor-args",
-            f"youtube:max_comments={max_val},{max_val},{max_val},{max_val}",
-            url,
+            f"youtube:max_comments={max_val},{max_val},{max_val},{max_val};player_client=default,web,android",
         ]
 
         stdout, stderr, returncode = await self._run_command(cmd, url)
@@ -202,8 +229,6 @@ class YtdlpClient:
             "--dump-json",
             "--flat-playlist",
             "--no-download",
-            "--ignore-errors",
-            url_or_query,
         ]
         if limit:
             cmd.extend(["--playlist-end", str(limit)])
@@ -241,8 +266,6 @@ class YtdlpClient:
             "yt-dlp",
             "-o",
             f"{output_template}.%(ext)s" if "%(ext)s" not in output_template else output_template,
-            "--no-playlist",
-            "--ignore-errors",
             "--write-thumbnail",
             "--convert-thumbnails",
             "jpg",
@@ -271,8 +294,6 @@ class YtdlpClient:
                     "mp4",
                 ]
             )
-
-        cmd.append(url)
 
         stdout, stderr, returncode = await self._run_command(cmd, url, timeout=600)
 
@@ -304,14 +325,11 @@ class YtdlpClient:
             "yt-dlp",
             "-o",
             output_template,
-            "--no-playlist",
-            "--ignore-errors",
             "-x",
             "--audio-format",
             "mp3",
             "--audio-quality",
             "192K",
-            url,
         ]
 
         stdout, stderr, returncode = await self._run_command(cmd, url)

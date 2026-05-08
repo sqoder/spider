@@ -1,26 +1,30 @@
 """
-YouTube Playwright Crawler implementation.
+Playwright-based crawler for YouTube.
+
 Mimics MediaCrawler by using direct web scraping (Playwright) to bypass API Key requirements.
+This crawler has been updated to use Scrapling's StealthyFetcher for anti-bot evasion.
 """
 
-import asyncio
-from datetime import datetime
+from typing import Any
 from urllib.parse import quote_plus
+from datetime import datetime, UTC
+import asyncio
 
+from playwright.async_api import Page
 from loguru import logger
 from scrapling import StealthyFetcher
 
-from app.core.browser_manager import browser_manager
+from app.crawlers.base import BaseCrawler, CrawlResult, CommentResult
 from app.core.config import get_settings
-from app.crawlers.base import BaseCrawler, CommentResult, CrawlResult
-from app.crawlers.youtube.innertube_client import InnertubeClient
-from app.crawlers.youtube.ytdlp_client import YtdlpClient
+from app.core.browser_manager import browser_manager
+
+
+YOUTUBE_ORIGIN = "https://www.youtube.com"
 
 
 class PlaywrightYouTubeCrawler(BaseCrawler):
     """
     YouTube crawler using Playwright for direct web scraping.
-    Requires NO API KEY.
     """
 
     platform = "youtube"
@@ -28,451 +32,290 @@ class PlaywrightYouTubeCrawler(BaseCrawler):
     def __init__(self):
         super().__init__()
         self.settings = get_settings()
-        self.ytdlp = YtdlpClient()
+
+    async def _new_fetcher(self) -> StealthyFetcher:
+        fetcher = await browser_manager.new_fetcher(
+            cookies_file=self.settings.youtube_cookies_file,
+            headless=self.settings.playwright_headless,
+        )
+        return fetcher
+
+    async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str):
+        page = getattr(fetcher, "page", None)
+        if not page:
+            await fetcher.get(url)
+            page = getattr(fetcher, "page", None)
+        
+        if page:
+            await page.goto(url, wait_until="domcontentloaded")
+            await self._handle_consent(fetcher)
 
     async def _handle_consent(self, fetcher: StealthyFetcher):
-        """Automatically click 'Accept All' on EU privacy popups."""
         try:
-            # Scrapling adaptive find for consent button
-            button = fetcher.find_similar("Accept all", "button")  # type: ignore[attr-defined]
+            button = fetcher.find_similar("Accept all", "button")
             if button:
-                button.click()
-                await asyncio.sleep(1)
-                logger.info(
-                    "[Playwright] Handled privacy consent popup via Scrapling adaptive parser."
-                )
+                await button.click()
                 return
         except Exception:
             pass
 
-        try:
-            # Common selectors for YouTube's consent dialog
-            selectors = [
-                "button[aria-label='Accept all']",
-                "button:has-text('Accept all')",
-                "ytd-button-renderer:has-text('Accept all')",
-                "form[action='https://consent.youtube.com/save'] button",
-            ]
-            page = fetcher.page  # type: ignore[attr-defined]
-            for selector in selectors:
-                try:
-                    # Wait briefly for the element
-                    btn = page.locator(selector).first
-                    if await btn.is_visible(timeout=2000):
-                        await btn.click()
-                        await asyncio.sleep(1)
-                        logger.info("[Playwright] Handled privacy consent popup via selector.")
+        page = getattr(fetcher, "page", None)
+        if not page:
+             return
+             
+        selectors = [
+            "button[aria-label='Accept all']",
+            "button:has-text('Accept all')",
+            "button:has-text('I agree')",
+            "ytd-button-renderer:has-text('Accept all')",
+            "form[action*='consent.youtube.com/save'] button"
+        ]
+        
+        for selector in selectors:
+            try:
+                if await page.locator(selector).count() > 0:
+                    button = page.locator(selector).first
+                    if await button.is_visible(timeout=1000):
+                        await button.click()
+                        await page.wait_for_load_state("domcontentloaded")
                         return
-                except Exception:
-                    continue
-        except Exception as e:
-            logger.debug(f"[Playwright] No consent popup found or handled: {e}")
+            except Exception:
+                continue
 
-    async def _goto_with_consent(self, fetcher: StealthyFetcher, url: str):
-        """Navigate to URL and handle consent popup."""
-        await fetcher.page.goto(url, wait_until="domcontentloaded")  # type: ignore[attr-defined]
-        await self._handle_consent(fetcher)
-
-    async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
-        """Search YouTube using Playwright by parsing ytInitialData."""
+    async def search(self, keyword: str, limit: int = 10) -> list[CrawlResult]:
+        logger.info(f"[Playwright] Searching YouTube for: {keyword}")
         await self._rate_limit()
-        logger.info(f"[Playwright] Searching YouTube: {keyword}")
-        fetcher = await browser_manager.new_fetcher(
-            cookies_file=self.settings.youtube_cookies_file,
-            locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        page = fetcher.page  # type: ignore[attr-defined]
 
-        results = []
+        fetcher = await self._new_fetcher()
+        page = getattr(fetcher, "page", None)
+        results: list[CrawlResult] = []
+
         try:
-            url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}"
+            url = f"{YOUTUBE_ORIGIN}/results?search_query={quote_plus(keyword)}"
             await self._goto_with_consent(fetcher, url)
+            
+            if not page:
+                page = getattr(fetcher, "page", None)
+                
+            if not page:
+                return []
 
-            # YouTube stores the initial data in a global window variable `ytInitialData`
-            # We can evaluate javascript to extract it directly!
-            yt_data = await page.evaluate("() => { return window.ytInitialData; }")
+            await page.wait_for_selector("ytd-video-renderer", timeout=10000)
 
-            if not yt_data:
-                logger.warning("ytInitialData not found. Retrying with delay...")
-                await asyncio.sleep(2)
-                yt_data = await page.evaluate("() => { return window.ytInitialData; }")
+            # Scroll to load more
+            for _ in range(5):
+                await page.mouse.wheel(0, 2000)
+                await asyncio.sleep(1)
+                count = await page.locator("ytd-video-renderer").count()
+                if count >= limit:
+                    break
 
-            if not yt_data:
-                raise Exception("Failed to extract ytInitialData from page")
+            elements = page.locator("ytd-video-renderer")
+            count = min(await elements.count(), limit)
 
-            # Parse the deeply nested JSON structure
-            contents = yt_data.get("contents", {})
-            two_column = contents.get("twoColumnSearchResultsRenderer", {})
-            primary_contents = two_column.get("primaryContents", {})
-            section_list = primary_contents.get("sectionListRenderer", {})
+            for i in range(count):
+                el = elements.nth(i)
+                try:
+                    title_el = el.locator("#video-title")
+                    title = await title_el.text_content() or ""
+                    title = title.strip()
+                    
+                    href = await title_el.get_attribute("href") or ""
+                    video_url = f"{YOUTUBE_ORIGIN}{href}" if href.startswith("/") else href
+                    video_id = ""
+                    if "?v=" in href:
+                        video_id = href.split("?v=")[1].split("&")[0]
 
-            for content in section_list.get("contents", []):
-                item_section = content.get("itemSectionRenderer", {})
-                for item in item_section.get("contents", []):
-                    if "videoRenderer" in item:
-                        video = item["videoRenderer"]
+                    channel_el = el.locator("#channel-info .yt-simple-endpoint").first
+                    channel_name = await channel_el.text_content() or ""
+                    channel_name = channel_name.strip()
+                    
+                    channel_href = await channel_el.get_attribute("href") or ""
+                    channel_url = f"{YOUTUBE_ORIGIN}{channel_href}" if channel_href.startswith("/") else channel_href
+                    channel_id = channel_href.split("/")[-1] if channel_href else ""
 
-                        video_id = video.get("videoId")
-                        title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
+                    views_el = el.locator("#metadata-line span").first
+                    views_text = await views_el.text_content() or ""
+                    
+                    thumb_el = el.locator("ytd-thumbnail img").first
+                    thumb_url = await thumb_el.get_attribute("src") or ""
 
-                        # Author info
-                        owner = video.get("ownerText", {}).get("runs", [{}])[0]
-                        author_name = owner.get("text", "")
-                        author_url = (
-                            owner.get("navigationEndpoint", {})
-                            .get("commandMetadata", {})
-                            .get("webCommandMetadata", {})
-                            .get("url", "")
-                        )
-                        author_username = author_url.split("/")[-1] if author_url else ""
+                    result = CrawlResult(
+                        platform=self.platform,
+                        source_id=video_id,
+                        url=video_url,
+                        title=title,
+                        author_id=channel_id,
+                        author_name=channel_name,
+                        author_url=channel_url,
+                        thumbnail_url=thumb_url,
+                        visible_data={
+                            "views_text": views_text.strip(),
+                        },
+                        raw_sources={"playwright": "scraped"},
+                        capture_meta={
+                            "method": "youtube_playwright_search",
+                            "captured_at": datetime.now(UTC).isoformat()
+                        }
+                    )
+                    results.append(result)
 
-                        # Stats
-                        view_text = video.get("viewCountText", {}).get("simpleText", "0")
-                        view_count = self._parse_count(view_text)
+                except Exception as e:
+                    logger.debug(f"[Playwright] Error parsing video element {i}: {e}")
+                    continue
 
-                        result = CrawlResult(
-                            platform="youtube",
-                            source_id=video_id,
-                            url=f"https://www.youtube.com/watch?v={video_id}",
-                            title=title,
-                            content_type="video",
-                            author_id=author_username,
-                            author_name=author_name,
-                            author_username=author_username,
-                            view_count=view_count,
-                            raw=video,
-                        )
-                        results.append(result)
-
-                        if len(results) >= limit:
-                            return results
-
+            return results
         except Exception as e:
             logger.error(f"[Playwright] Search failed: {e}")
+            return results
         finally:
             await browser_manager.close_fetcher(fetcher)
 
-        return results
 
-    async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
-        """Get videos from a YouTube channel using yt-dlp as backend."""
+    async def get_user_posts(self, username: str, limit: int = 10) -> list[CrawlResult]:
+        logger.info(f"[Playwright] Getting user posts for: {username}")
         await self._rate_limit()
-        handle = username if username.startswith("@") else f"@{username}"
-        url = f"https://www.youtube.com/{handle}/videos"
-        logger.info(f"[Playwright] Getting channel videos via yt-dlp: {url}")
-        try:
-            items = await self.ytdlp.extract_multiple_info(url, limit=limit)
-        except Exception as exc:
-            logger.warning(f"[Playwright] yt-dlp channel fetch failed: {exc}")
-            return []
 
-        results = []
-        for info in items[:limit]:
-            if not info.get("id"):
-                continue
-            video_url = (
-                info.get("original_url")
-                or info.get("webpage_url")
-                or f"https://www.youtube.com/watch?v={info['id']}"
-            )
-            results.append(
-                CrawlResult(
-                    platform="youtube",
-                    source_id=info.get("id", ""),
-                    url=video_url,
-                    title=info.get("title"),
-                    content=info.get("description"),
-                    content_type="video",
-                    author_name=info.get("channel"),
-                    author_username=info.get("uploader_id"),
-                    view_count=info.get("view_count", 0) or 0,
-                    thumbnail_url=info.get("thumbnail"),
-                    raw=info,
-                )
-            )
-        return results
+        fetcher = await self._new_fetcher()
+        results: list[CrawlResult] = []
+
+        try:
+            handle = username if username.startswith("@") else f"@{username}"
+            url = f"{YOUTUBE_ORIGIN}/{handle}/videos"
+            await self._goto_with_consent(fetcher, url)
+            
+            page = getattr(fetcher, "page", None)
+            if not page:
+                return []
+
+            await page.wait_for_selector("ytd-rich-item-renderer", timeout=10000)
+
+            # Scroll to load more
+            for _ in range(5):
+                await page.mouse.wheel(0, 2000)
+                await asyncio.sleep(1)
+                count = await page.locator("ytd-rich-item-renderer").count()
+                if count >= limit:
+                    break
+
+            elements = page.locator("ytd-rich-item-renderer")
+            count = min(await elements.count(), limit)
+
+            for i in range(count):
+                el = elements.nth(i)
+                try:
+                    title_el = el.locator("#video-title")
+                    title = await title_el.text_content() or ""
+                    title = title.strip()
+                    
+                    href = await title_el.get_attribute("href") or ""
+                    video_url = f"{YOUTUBE_ORIGIN}{href}" if href.startswith("/") else href
+                    video_id = ""
+                    if "?v=" in href:
+                        video_id = href.split("?v=")[1].split("&")[0]
+
+                    thumb_el = el.locator("ytd-thumbnail img").first
+                    thumb_url = await thumb_el.get_attribute("src") or ""
+
+                    result = CrawlResult(
+                        platform=self.platform,
+                        source_id=video_id,
+                        url=video_url,
+                        title=title,
+                        author_username=username,
+                        thumbnail_url=thumb_url,
+                        raw_sources={"playwright": "scraped"},
+                        capture_meta={
+                            "method": "youtube_playwright_user_posts",
+                            "captured_at": datetime.now(UTC).isoformat()
+                        }
+                    )
+                    results.append(result)
+
+                except Exception as e:
+                    logger.debug(f"[Playwright] Error parsing video element {i}: {e}")
+                    continue
+
+            return results
+        except Exception as e:
+            logger.error(f"[Playwright] Get user posts failed: {e}")
+            return results
+        finally:
+            await browser_manager.close_fetcher(fetcher)
+
 
     async def get_post_detail(self, url: str) -> CrawlResult:
-        """Extract video details using Playwright by parsing ytInitialData."""
+        logger.info(f"[Playwright] Getting post detail for: {url}")
         await self._rate_limit()
-        logger.info(f"[Playwright] Extracting video detail: {url}")
-        fetcher = await browser_manager.new_fetcher(
-            cookies_file=self.settings.youtube_cookies_file,
-            locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        page = fetcher.page  # type: ignore[attr-defined]
 
+        fetcher = await self._new_fetcher()
+        
         try:
             await self._goto_with_consent(fetcher, url)
-            # Wait a bit for the data to be injected into window
-            await asyncio.sleep(1)
+            page = getattr(fetcher, "page", None)
+            if not page:
+                 raise Exception("Page not initialized")
 
-            yt_data = await page.evaluate("() => { return window.ytInitialData; }")
-            if not yt_data:
-                raise Exception("Failed to extract ytInitialData for video detail")
+            # Try to get initial data variable first as it's more reliable
+            yt_data = await page.evaluate("() => window.ytInitialData || null")
+            
+            if yt_data:
+                from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+                return VisibleYouTubeCrawler.parse_watch_initial_data(url, yt_data, None)
 
-            # Extract from the complex nested structure
-            results = yt_data.get("contents", {}).get("twoColumnWatchNextResults", {})
-            results_primary = results.get("results", {}).get("results", {})
-
-            # This path is highly variable on YouTube, using a defensive search
-            video_primary_info = {}
-            video_secondary_info = {}
-
-            for content in results_primary.get("contents", []):
-                if "videoPrimaryInfoRenderer" in content:
-                    video_primary_info = content["videoPrimaryInfoRenderer"]
-                if "videoSecondaryInfoRenderer" in content:
-                    video_secondary_info = content["videoSecondaryInfoRenderer"]
-
-            video_id = (
-                yt_data.get("currentVideoEndpoint", {}).get("watchEndpoint", {}).get("videoId")
-            )
-            title = video_primary_info.get("title", {}).get("runs", [{}])[0].get("text", "")
-
-            # View count
-            view_text = (
-                video_primary_info.get("viewCount", {})
-                .get("videoViewCountRenderer", {})
-                .get("viewCount", {})
-                .get("simpleText", "0")
-            )
-            view_count = self._parse_count(view_text)
-
-            # Author / Description
-            owner = video_secondary_info.get("owner", {}).get("videoOwnerRenderer", {})
-            author_name = owner.get("title", {}).get("runs", [{}])[0].get("text", "")
-            author_url = (
-                owner.get("navigationEndpoint", {})
-                .get("commandMetadata", {})
-                .get("webCommandMetadata", {})
-                .get("url", "")
-            )
-            author_username = author_url.split("/")[-1] if author_url else ""
-
-            # Robust Description Extraction
-            description_text = ""
-            # Path 1: Standard secondary info
-            description_runs = video_secondary_info.get("description", {}).get("runs", [])
-            if description_runs:
-                description_text = "".join([r.get("text", "") for r in description_runs])
-
-            # Path 2: Fallback to engagementPanels (new YouTube UI)
-            if not description_text:
-                panels = yt_data.get("engagementPanels", [])
-                for panel in panels:
-                    if "structuredDescriptionContentRenderer" in str(panel):
-                        # Simple string search or deep extraction
-                        try:
-                            # Try to find all 'text' fields in the panel
-                            def find_all_text(obj):
-                                texts = []
-                                if isinstance(obj, dict):
-                                    if "text" in obj and isinstance(obj["text"], str):
-                                        texts.append(obj["text"])
-                                    for v in obj.values():
-                                        texts.extend(find_all_text(v))
-                                elif isinstance(obj, list):
-                                    for i in obj:
-                                        texts.extend(find_all_text(i))
-                                return texts
-
-                            description_text = "\n".join(find_all_text(panel))
-                            break
-                        except Exception:
-                            continue
+            # Fallback to scraping DOM
+            await page.wait_for_selector("h1.ytd-watch-metadata", timeout=10000)
+            
+            title = await page.locator("h1.ytd-watch-metadata").text_content() or ""
+            
+            channel_el = page.locator("ytd-video-owner-renderer a.yt-simple-endpoint").first
+            channel_name = await channel_el.text_content() or ""
+            channel_href = await channel_el.get_attribute("href") or ""
+            channel_id = channel_href.split("/")[-1] if channel_href else ""
+            
+            video_id = ""
+            if "?v=" in url:
+                 video_id = url.split("?v=")[1].split("&")[0]
 
             return CrawlResult(
-                platform="youtube",
-                source_id=video_id or url.split("v=")[-1],
+                platform=self.platform,
+                source_id=video_id,
                 url=url,
-                title=title,
-                content=description_text,
-                content_type="video",
-                author_name=author_name,
-                author_username=author_username,
-                view_count=view_count,
-                raw=yt_data,
+                title=title.strip(),
+                author_id=channel_id,
+                author_name=channel_name.strip(),
+                raw_sources={"playwright": "dom_scraped"},
+                capture_meta={
+                    "method": "youtube_playwright_detail",
+                    "captured_at": datetime.now(UTC).isoformat()
+                }
             )
 
         except Exception as e:
             logger.error(f"[Playwright] Detail extraction failed: {e}")
-            return CrawlResult(platform=self.platform, source_id="error", url=url)
+            return CrawlResult(
+                platform=self.platform,
+                source_id="",
+                url=url,
+                raw_sources={},
+                capture_meta={
+                    "method": "youtube_playwright_detail_failed",
+                    "error": str(e),
+                    "captured_at": datetime.now(UTC).isoformat()
+                }
+            )
         finally:
             await browser_manager.close_fetcher(fetcher)
 
-    async def get_comments(self, post_id: str, limit: int = 50) -> list[CommentResult]:
-        """Extract comments with multi-tier fallbacks: Innertube -> yt-dlp -> Playwright."""
+
+    async def get_comments(self, post_id: str, limit: int = 10) -> list[CommentResult]:
+        logger.info(f"[Playwright] Fetching comments for: {post_id}")
         await self._rate_limit()
-        logger.info(f"[YouTube] Multi-tier comment extraction for: {post_id}")
-        # Build the video URL once so all tiers can use it
-        url = f"https://www.youtube.com/watch?v={post_id}"
-
-        # Tier 1: yt-dlp (handles replies natively, most robust)
-        try:
-            logger.info(f"[yt-dlp] Extracting comments for {post_id}")
-            url = f"https://www.youtube.com/watch?v={post_id}"
-            info = await self.ytdlp.extract_info_with_comments(url, max_comments=limit)
-            ytdlp_comments = info.get("comments", [])
-            # yt-dlp 成功返回的结果（包括空列表）直接使用，只有异常才走 Innertube 兜底
-            results = []
-            seen_ids: set[str] = set()
-            for c in ytdlp_comments[:limit]:
-                parent = c.get("parent", "")
-                parent_id = None if parent in ("root", "none", post_id) else parent
-                cid = c.get("id", "")
-                if cid in seen_ids:
-                    continue
-                if cid:
-                    seen_ids.add(cid)
-                results.append(
-                    CommentResult(
-                        platform="youtube",
-                        source_id=cid,
-                        content=c.get("text", ""),
-                        author_name=c.get("author", ""),
-                        author_id=c.get("author_id") or c.get("author_channel_id"),
-                        like_count=c.get("like_count", 0) or 0,
-                        reply_count=c.get("reply_count", 0) or 0,
-                        parent_comment_id=parent_id,
-                        published_at=datetime.fromtimestamp(c.get("timestamp", 0))
-                        if c.get("timestamp")
-                        else None,
-                    )
-                )
-            logger.info(f"[yt-dlp] Success: extracted {len(results)} comments")
-            return results
-        except Exception as e:
-            logger.warning(f"[yt-dlp] Failed: {e}")
-
-        # Tier 2: Innertube API (Fast fallback)
-        innertube = InnertubeClient()
-        try:
-            innertube_results = await innertube.get_comments(post_id, limit)
-            if innertube_results:
-                # Deduplicate against any results already collected
-                deduped = [r for r in innertube_results if r.source_id not in seen_ids]
-                logger.info(f"[Innertube] Success: fetched {len(deduped)} unique comments")
-                return deduped
-        except Exception as e:
-            logger.warning(f"[Innertube] Failed: {e}")
-        finally:
-            await innertube.close()
-
-        # Tier 3: Playwright Scrolling (Visual Fallback)
-        logger.info(f"[Playwright] Falling back to visual scrolling for {post_id}")
-        fetcher = await browser_manager.new_fetcher(
-            cookies_file=self.settings.youtube_cookies_file,
-            locale="en-US",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        page = fetcher.page  # type: ignore[attr-defined]
-
-        results = []
-        try:
-            await self._goto_with_consent(fetcher, url)
-            await asyncio.sleep(2)  # Wait for page load
-
-            # 1. Human-like interaction: Click the page to focus
-            await page.mouse.click(100, 100)
-
-            # 2. Scroll to the comment section
-            # Different YouTube versions have comments at different positions
-            await page.evaluate("window.scrollTo(0, 1000)")
-            await asyncio.sleep(2)
-
-            # Use multiple selector strategies
-            comment_selectors = [
-                "ytd-comment-thread-renderer",
-                "#comments",
-                "ytd-item-section-renderer[section-identifier='comment-item-section']",
-            ]
-
-            found = False
-            for selector in comment_selectors:
-                try:
-                    await page.wait_for_selector(selector, timeout=15000)
-                    found = True
-                    break
-                except Exception:
-                    continue
-
-            if not found:
-                logger.warning(
-                    "[Playwright] Could not find comment section via selectors. Forcing scroll."
-                )
-                for _ in range(3):
-                    await page.keyboard.press("PageDown")
-                    await asyncio.sleep(2)
-
-            # 3. Aggressive scrolling to load more
-            last_len = 0
-            for _ in range(5):
-                await page.keyboard.press("End")
-                await asyncio.sleep(2)
-                current_elements = await page.query_selector_all("ytd-comment-thread-renderer")
-                if len(current_elements) >= limit or (
-                    len(current_elements) == last_len and last_len > 0
-                ):
-                    break
-                last_len = len(current_elements)
-
-            # 4. Extract with fallback selectors
-            elements = await page.query_selector_all("ytd-comment-thread-renderer")
-            logger.info(f"[Playwright] Found {len(elements)} comments")
-
-            for el in elements:
-                try:
-                    # Try different paths for content
-                    content_el = await el.query_selector(
-                        "#content-text"
-                    ) or await el.query_selector("yt-formatted-string")
-                    author_el = await el.query_selector("#author-text") or await el.query_selector(
-                        "#author-name"
-                    )
-
-                    if content_el and author_el:
-                        content = await content_el.inner_text()
-                        author_name = (await author_el.inner_text()).strip()
-
-                        results.append(
-                            CommentResult(
-                                platform="youtube",
-                                source_id=f"pw_{len(results)}",
-                                content=content,
-                                author_name=author_name,
-                                published_at=datetime.now(),
-                            )
-                        )
-                except Exception:
-                    continue
-
-                if len(results) >= limit:
-                    break
-
-        except Exception as e:
-            logger.error(f"[Playwright] Final fallback comment extraction failed: {e}")
-        finally:
-            await browser_manager.close_fetcher(fetcher)
-
-        return results
-
-    def _parse_count(self, text: str) -> int:
-        """Parse '1.2M views' into 1200000"""
-        if not text:
-            return 0
-        text = text.lower().replace(" views", "").replace(" view", "").replace(",", "")
-        if "k" in text:
-            return int(float(text.replace("k", "")) * 1000)
-        if "m" in text:
-            return int(float(text.replace("m", "")) * 1000000)
-        try:
-            return int(float(text))
-        except (ValueError, TypeError):
-            return 0
+        
+        # We delegate to the visible crawler's dom parsing logic
+        from app.crawlers.youtube.visible_crawler import VisibleYouTubeCrawler
+        crawler = VisibleYouTubeCrawler()
+        return await crawler._get_comments_from_dom(post_id, limit)
 
     async def close(self) -> None:
-        """BrowserManager handles browser lifecycle."""
         pass

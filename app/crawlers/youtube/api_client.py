@@ -54,9 +54,13 @@ class YouTubeAPIClient:
                 quota_limit=self.daily_quota,
             )
 
-    async def _request(self, endpoint: str, params: dict, retry_count: int = 2) -> dict:
+    async def _request(self, endpoint: str, params: dict, retry_count: int | None = None) -> dict:
         """Make an API request with quota tracking and proxy rotation using Scrapling."""
         self._check_quota(endpoint)
+
+        if retry_count is None:
+            settings = get_settings()
+            retry_count = settings.max_retries
 
         params["key"] = self.api_key
         url = f"{self.BASE_URL}/{endpoint}"
@@ -77,19 +81,19 @@ class YouTubeAPIClient:
                         )
                     return f.get(url, params=params)
 
-                response = await asyncio.get_event_loop().run_in_executor(None, _do_fetch)
+                response = await asyncio.get_running_loop().run_in_executor(None, _do_fetch)
 
-                if response.status_code != 200:  # type: ignore[attr-defined]
+                if response.status != 200:
                     logger.warning(
-                        f"YouTube API request failed (status {response.status_code}): {response.text[:100]}"  # type: ignore[attr-defined]
+                        f"YouTube API request failed (status {response.status}): {response.text[:100]}"
                     )
-                    if attempt < retry_count and response.status_code >= 500:  # type: ignore[attr-defined]
+                    if attempt < retry_count and response.status >= 500:
                         await asyncio.sleep(2**attempt)
                         continue
-                    response.raise_for_status()  # type: ignore[attr-defined]
+                    response.raise_for_status()
 
                 self._quota_used += self.QUOTA_COSTS.get(endpoint, 1)
-                return response.json()  # type: ignore[attr-defined]
+                return response.json()
             except Exception as e:
                 if attempt < retry_count:
                     logger.warning(

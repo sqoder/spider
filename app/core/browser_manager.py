@@ -88,10 +88,16 @@ class BrowserManager:
             proxy = kwargs.get("proxy") or proxy_manager.get_proxy()
 
             # Scrapling StealthyFetcher handles browser launch internally
-            # We map some common playwright kwargs to Scrapling if needed
-            fetcher = StealthyFetcher(
-                headless=kwargs.get("headless", True), proxy=proxy, **kwargs
-            )
+            fetcher = StealthyFetcher()
+            
+            # pass configure parameters - only those supported by Scrapling parser
+            if hasattr(fetcher, "configure"):
+                parser_kwargs = {
+                    k: v for k, v in kwargs.items() 
+                    if k in ["huge_tree", "keep_comments", "keep_cdata", "adaptive", "storage", "storage_args", "adaptive_domain"]
+                }
+                if parser_kwargs:
+                    fetcher.configure(**parser_kwargs)
 
             # Save properties for recycling
             fetcher._cookies_file = cookies_file  # type: ignore[attr-defined]

@@ -3,6 +3,7 @@ Base crawler abstract class.
 All platform-specific crawlers must inherit from BaseCrawler and implement its methods.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -146,7 +147,14 @@ class BaseCrawler(ABC):
 
     async def _rate_limit(self, cost: int = 1) -> None:
         """Apply rate limiting before making a request."""
+        # 1. Distributed/Local Token Bucket Rate Limiting
         await rate_limiter.acquire(self.platform, cost=cost)
+        
+        # 2. Fixed Politeness Delay (from crawler_config.py)
+        from app.core.config import get_settings
+        settings = get_settings()
+        if settings.request_delay > 0:
+            await asyncio.sleep(settings.request_delay)
 
     @abstractmethod
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:

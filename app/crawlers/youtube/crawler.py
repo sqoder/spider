@@ -4,7 +4,7 @@ Uses YouTube Data API for structured data and yt-dlp for media downloads.
 """
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -27,7 +27,6 @@ class YouTubeCrawler(BaseCrawler):
     async def search(self, keyword: str, limit: int = 20) -> list[CrawlResult]:
         """Search YouTube videos by keyword with quota fallback and time-slicing for massive data retrieval."""
         try:
-            await self._rate_limit(cost=100)  # search.list costs 100 quota units
             logger.info(f"YouTube search: '{keyword}', limit={limit}")
 
             if limit <= 100:
@@ -35,7 +34,7 @@ class YouTubeCrawler(BaseCrawler):
 
             # Time-sliced search for high-concurrency / massive data ingestion (bypasses 500-1000 item limit)
             from datetime import timedelta
-            now = datetime.now()
+            now = datetime.now(UTC)
             
             # Slice into weekly segments (7 days) going backwards in time
             slice_days = 7
@@ -64,8 +63,8 @@ class YouTubeCrawler(BaseCrawler):
                 
                 current_end = current_start
                 
-                if not slice_results and len(results) == 0:
-                    continue
+                if not slice_results:
+                    break
 
             logger.info(f"[YouTube Slicer] Completed search, gathered {len(results)} total results")
             return results[:limit]
@@ -123,7 +122,6 @@ class YouTubeCrawler(BaseCrawler):
 
     async def get_user_posts(self, username: str, limit: int = 20) -> list[CrawlResult]:
         """Get videos from a YouTube channel by username/handle."""
-        await self._rate_limit()
         logger.info(f"YouTube user posts: '{username}', limit={limit}")
 
         # First, resolve username to channel ID
@@ -141,6 +139,8 @@ class YouTubeCrawler(BaseCrawler):
         remaining = limit
 
         while remaining > 0:
+            # B4: Rate limit before each batch call
+            await self._rate_limit(cost=100)
             batch_size = min(remaining, 50)
             response = await self.api.get_channel_videos(
                 channel_id=channel_id,
@@ -254,8 +254,10 @@ class YouTubeCrawler(BaseCrawler):
                     # Fetch ALL replies if present
                     total_replies = item["snippet"].get("totalReplyCount", 0)
                     if total_replies > 0:
-                        replies = await self._fetch_all_replies(comment_id)
-                        results.extend(replies)
+                        remaining_budget = limit - len(results)
+                        if remaining_budget > 0:
+                            replies = await self._fetch_all_replies(comment_id, max_replies=remaining_budget)
+                            results.extend(replies)
 
                 remaining -= len(items)
                 page_token = response.get("nextPageToken")
@@ -270,15 +272,12 @@ class YouTubeCrawler(BaseCrawler):
             crawler = PlaywrightYouTubeCrawler()
             return await crawler.get_comments(post_id, limit)
 
-    async def _fetch_all_replies(self, parent_id: str) -> list[CommentResult]:
+    async def _fetch_all_replies(self, parent_id: str, max_replies: int = 500) -> list[CommentResult]:
         """Internal helper to fetch all replies for a comment thread via pagination."""
         replies = []
         page_token = None
 
-        # Limit total replies per thread to avoid infinite loops/quota burn
-        max_thread_replies = 500
-
-        while len(replies) < max_thread_replies:
+        while len(replies) < max_replies:
             try:
                 response = await self.api.get_comment_replies(
                     parent_id=parent_id, page_token=page_token
@@ -295,7 +294,7 @@ class YouTubeCrawler(BaseCrawler):
                         source_id=item["id"],
                         content=snippet.get("textDisplay"),
                         author_name=snippet.get("authorDisplayName"),
-                        author_username=snippet.get("authorChannelUrl", "").split("/")[-1],
+                        author_username=self._channel_handle_from_url(snippet.get("authorChannelUrl", "")),
                         author_id=snippet.get("authorChannelId", {}).get("value"),
                         like_count=snippet.get("likeCount", 0),
                         reply_count=0,
@@ -304,6 +303,9 @@ class YouTubeCrawler(BaseCrawler):
                         raw=item,
                     )
                     replies.append(reply)
+
+                    if len(replies) >= max_replies:
+                        break
 
                 page_token = response.get("nextPageToken")
                 if not page_token:
@@ -330,7 +332,7 @@ class YouTubeCrawler(BaseCrawler):
             content_type="video",
             author_id=snippet.get("channelId"),
             author_name=snippet.get("channelTitle"),
-            author_username=snippet.get("channelId"),
+            author_username=None,
             author_url=f"https://www.youtube.com/channel/{snippet.get('channelId', '')}",
             like_count=int(statistics.get("likeCount", 0)),
             comment_count=int(statistics.get("commentCount", 0)),
@@ -439,19 +441,18 @@ class YouTubeCrawler(BaseCrawler):
         await self.ytdlp.close()
 
     @staticmethod
-    def _channel_handle_from_url(url: str) -> str:
+    def _channel_handle_from_url(url: str) -> str | None:
         """Extract a readable handle from a YouTube channel URL.
 
-        Handles /channel/UCxxx, /@handle, /c/name, and bare IDs.
+        Returns the handle (e.g., @handle) or None if it's a standard channel ID.
         """
         if not url:
-            return ""
-        # Strip trailing slash and split
+            return None
         parts = url.rstrip("/").split("/")
         if len(parts) < 2:
-            return url
+            return None
         last = parts[-1]
-        # If the segment before last is 'channel', last is the UCxxx ID — keep as-is
-        # If the segment before last is '@', the handle is the last part
-        # If the last part starts with '@', strip it for a clean handle
-        return last
+        # Only return if it's a handle (starts with @)
+        if last.startswith("@"):
+            return last
+        return None
