@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Test / cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+htmlcov/
+.coverage
+*.cover
+
+# Secrets / local state — never commit these
+.env
+*.cookies.txt
+youtube_cookies.txt
+cookies/
+data/
+/tmp/
+
+# Example run outputs
+/batch_*/
+/stress_*/
+/fanout_*/
+*.jsonl
+*.log

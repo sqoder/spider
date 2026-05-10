@@ -1,0 +1,15 @@
+# Minimal runtime dependencies for youtube-crawler.
+# Everything here is what the package actually imports at runtime — no
+# unrelated web framework / ORM / task queue baggage from the parent project.
+
+# Scrapers (core)
+yt-dlp>=2024.8.0              # subprocess invoked by YtdlpYouTubeCrawler
+scrapling>=0.4.7              # StealthyFetcher used by VisibleYouTubeCrawler
+playwright>=1.47.0            # browser driver scrapling depends on
+
+# Config + logging
+pydantic-settings>=2.5.0      # config.py
+loguru>=0.7.2                 # used everywhere
+
+# ── optional, only needed if you want to run the examples/ scripts as-is ──
+# (all examples use stdlib only beyond the package itself)
